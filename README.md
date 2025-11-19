@@ -4,6 +4,7 @@ A comprehensive health monitoring system for villages, enabling villagers to rep
 
 ## Project Structure
 
+
 ```
 health monitor/
 ├── backend/                    # All backend services
