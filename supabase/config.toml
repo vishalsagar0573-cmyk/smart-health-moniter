@@ -1,0 +1,13 @@
+project_id = "usynxptupskoeceomjky"
+
+[functions.predict-risk]
+verify_jwt = false
+
+[functions.predict-disease]
+verify_jwt = false
+
+[functions.analyze-water-image]
+verify_jwt = false
+
+[functions.fetch-water-quality-data]
+verify_jwt = false

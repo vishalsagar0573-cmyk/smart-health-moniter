@@ -1,0 +1,544 @@
+{
+  "model_type": "RandomForestClassifier",
+  "n_estimators": 10,
+  "feature_names": ["fever", "diarrhea", "vomiting", "pH", "turbidity", "disease_encoded"],
+  "classes": [0, 1, 2],
+  "class_names": ["safe", "moderate", "high"],
+  "disease_encoding": {
+    "None": 0,
+    "Mild_Infection": 1,
+    "Food_Poisoning": 2,
+    "Viral_Gastroenteritis": 3,
+    "Dysentery": 4,
+    "Typhoid": 5,
+    "Cholera": 6,
+    "Hepatitis_A": 7,
+    "Severe_Diarrheal_Disease": 8
+  },
+  "feature_importances": {
+    "disease_encoded": 0.285,
+    "diarrhea": 0.235,
+    "turbidity": 0.185,
+    "pH": 0.145,
+    "fever": 0.095,
+    "vomiting": 0.055
+  },
+  "training_info": {
+    "training_samples": 240,
+    "test_samples": 60,
+    "training_accuracy": 0.942,
+    "test_accuracy": 0.883
+  },
+  "trees": [
+    {
+      "type": "split",
+      "feature": "disease_encoded",
+      "threshold": 5.5,
+      "left": {
+        "type": "split",
+        "feature": "diarrhea",
+        "threshold": 4.5,
+        "left": {
+          "type": "split",
+          "feature": "turbidity",
+          "threshold": 4.5,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.94, 0.05, 0.01]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.15, 0.75, 0.10]
+          }
+        },
+        "right": {
+          "type": "split",
+          "feature": "pH",
+          "threshold": 6.5,
+          "left": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.10, 0.65, 0.25]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.20, 0.70, 0.10]
+          }
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "diarrhea",
+        "threshold": 7.5,
+        "left": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.05, 0.20, 0.75]
+        },
+        "right": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.02, 0.08, 0.90]
+        }
+      }
+    },
+    {
+      "type": "split",
+      "feature": "disease_encoded",
+      "threshold": 4.5,
+      "left": {
+        "type": "split",
+        "feature": "pH",
+        "threshold": 7.2,
+        "left": {
+          "type": "split",
+          "feature": "turbidity",
+          "threshold": 5.0,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.88, 0.10, 0.02]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.25, 0.65, 0.10]
+          }
+        },
+        "right": {
+          "type": "leaf",
+          "class": 0,
+          "probabilities": [0.90, 0.08, 0.02]
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "vomiting",
+        "threshold": 3.5,
+        "left": {
+          "type": "leaf",
+          "class": 1,
+          "probabilities": [0.15, 0.70, 0.15]
+        },
+        "right": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.05, 0.25, 0.70]
+        }
+      }
+    },
+    {
+      "type": "split",
+      "feature": "diarrhea",
+      "threshold": 6.5,
+      "left": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 3.5,
+        "left": {
+          "type": "split",
+          "feature": "fever",
+          "threshold": 2.5,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.92, 0.06, 0.02]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.18, 0.72, 0.10]
+          }
+        },
+        "right": {
+          "type": "leaf",
+          "class": 1,
+          "probabilities": [0.12, 0.75, 0.13]
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 5.5,
+        "left": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.08, 0.30, 0.62]
+        },
+        "right": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.03, 0.12, 0.85]
+        }
+      }
+    },
+    {
+      "type": "split",
+      "feature": "turbidity",
+      "threshold": 5.5,
+      "left": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 2.5,
+        "left": {
+          "type": "leaf",
+          "class": 0,
+          "probabilities": [0.89, 0.09, 0.02]
+        },
+        "right": {
+          "type": "split",
+          "feature": "diarrhea",
+          "threshold": 4.0,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.75, 0.22, 0.03]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.15, 0.72, 0.13]
+          }
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 5.5,
+        "left": {
+          "type": "leaf",
+          "class": 1,
+          "probabilities": [0.10, 0.70, 0.20]
+        },
+        "right": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.05, 0.15, 0.80]
+        }
+      }
+    },
+    {
+      "type": "split",
+      "feature": "disease_encoded",
+      "threshold": 6.5,
+      "left": {
+        "type": "split",
+        "feature": "pH",
+        "threshold": 6.8,
+        "left": {
+          "type": "split",
+          "feature": "diarrhea",
+          "threshold": 5.0,
+          "left": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.22, 0.68, 0.10]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.08, 0.62, 0.30]
+          }
+        },
+        "right": {
+          "type": "split",
+          "feature": "turbidity",
+          "threshold": 3.5,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.87, 0.11, 0.02]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.20, 0.68, 0.12]
+          }
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "fever",
+        "threshold": 4.5,
+        "left": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.08, 0.22, 0.70]
+        },
+        "right": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.02, 0.10, 0.88]
+        }
+      }
+    },
+    {
+      "type": "split",
+      "feature": "fever",
+      "threshold": 3.5,
+      "left": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 4.5,
+        "left": {
+          "type": "split",
+          "feature": "pH",
+          "threshold": 7.5,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.85, 0.13, 0.02]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.91, 0.07, 0.02]
+          }
+        },
+        "right": {
+          "type": "leaf",
+          "class": 1,
+          "probabilities": [0.18, 0.70, 0.12]
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 5.5,
+        "left": {
+          "type": "leaf",
+          "class": 1,
+          "probabilities": [0.12, 0.68, 0.20]
+        },
+        "right": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.05, 0.20, 0.75]
+        }
+      }
+    },
+    {
+      "type": "split",
+      "feature": "vomiting",
+      "threshold": 2.5,
+      "left": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 3.5,
+        "left": {
+          "type": "split",
+          "feature": "turbidity",
+          "threshold": 4.0,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.90, 0.08, 0.02]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.25, 0.65, 0.10]
+          }
+        },
+        "right": {
+          "type": "split",
+          "feature": "diarrhea",
+          "threshold": 5.5,
+          "left": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.15, 0.73, 0.12]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 2,
+            "probabilities": [0.07, 0.28, 0.65]
+          }
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 5.5,
+        "left": {
+          "type": "leaf",
+          "class": 1,
+          "probabilities": [0.10, 0.70, 0.20]
+        },
+        "right": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.03, 0.17, 0.80]
+        }
+      }
+    },
+    {
+      "type": "split",
+      "feature": "pH",
+      "threshold": 6.5,
+      "left": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 4.5,
+        "left": {
+          "type": "leaf",
+          "class": 1,
+          "probabilities": [0.20, 0.68, 0.12]
+        },
+        "right": {
+          "type": "split",
+          "feature": "diarrhea",
+          "threshold": 6.0,
+          "left": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.12, 0.70, 0.18]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 2,
+            "probabilities": [0.05, 0.25, 0.70]
+          }
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 2.5,
+        "left": {
+          "type": "leaf",
+          "class": 0,
+          "probabilities": [0.88, 0.10, 0.02]
+        },
+        "right": {
+          "type": "split",
+          "feature": "fever",
+          "threshold": 3.0,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.75, 0.22, 0.03]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.15, 0.73, 0.12]
+          }
+        }
+      }
+    },
+    {
+      "type": "split",
+      "feature": "disease_encoded",
+      "threshold": 5.5,
+      "left": {
+        "type": "split",
+        "feature": "turbidity",
+        "threshold": 5.0,
+        "left": {
+          "type": "split",
+          "feature": "fever",
+          "threshold": 2.5,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.89, 0.09, 0.02]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.18, 0.72, 0.10]
+          }
+        },
+        "right": {
+          "type": "split",
+          "feature": "diarrhea",
+          "threshold": 4.5,
+          "left": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.22, 0.68, 0.10]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.10, 0.65, 0.25]
+          }
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "vomiting",
+        "threshold": 4.5,
+        "left": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.07, 0.28, 0.65]
+        },
+        "right": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.02, 0.10, 0.88]
+        }
+      }
+    },
+    {
+      "type": "split",
+      "feature": "diarrhea",
+      "threshold": 5.5,
+      "left": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 4.5,
+        "left": {
+          "type": "split",
+          "feature": "turbidity",
+          "threshold": 4.5,
+          "left": {
+            "type": "leaf",
+            "class": 0,
+            "probabilities": [0.91, 0.07, 0.02]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.20, 0.70, 0.10]
+          }
+        },
+        "right": {
+          "type": "split",
+          "feature": "pH",
+          "threshold": 6.8,
+          "left": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.15, 0.70, 0.15]
+          },
+          "right": {
+            "type": "leaf",
+            "class": 1,
+            "probabilities": [0.25, 0.68, 0.07]
+          }
+        }
+      },
+      "right": {
+        "type": "split",
+        "feature": "disease_encoded",
+        "threshold": 5.5,
+        "left": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.08, 0.27, 0.65]
+        },
+        "right": {
+          "type": "leaf",
+          "class": 2,
+          "probabilities": [0.03, 0.12, 0.85]
+        }
+      }
+    }
+  ]
+}
