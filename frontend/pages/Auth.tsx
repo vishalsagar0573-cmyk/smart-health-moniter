@@ -25,67 +25,80 @@ const Auth = () => {
     setLoading(true);
     setError("");
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    setLoading(false);
-
-    if (error) {
-      setError(error.message);
-      toast({
-        title: "Login failed",
-        description: error.message,
-        variant: "destructive",
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
-      return;
-    }
 
-    if (data.user) {
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", data.user.id);
+      setLoading(false);
 
-      const roleList = (roles || []).map((r: any) => r.role);
-
-      // If a specific role was intended via the clicked button, enforce it strictly
-      if (intendedRole) {
-        if (roleList.includes(intendedRole)) {
-          localStorage.setItem("lastRole", intendedRole);
-          navigate(intendedRole === "health_worker" ? "/worker-dashboard" : "/villager-dashboard");
-          return;
-        } else {
-          // Logout immediately and show error if the account doesn't have that role
-          await supabase.auth.signOut();
-          toast({
-            title: "Wrong login type",
-            description: intendedRole === "health_worker"
-              ? "This account is not registered as a Health Worker. Please use the Villager login."
-              : "This account is not registered as a Villager. Please use the Health Worker login.",
-            variant: "destructive",
-          });
-          return;
-        }
-      }
-
-      // No specific intent: route by available roles (prefer villager when ambiguous)
-      if (roleList.includes("villager")) {
-        localStorage.setItem("lastRole", "villager");
-        navigate("/villager-dashboard");
-      } else if (roleList.includes("health_worker")) {
-        localStorage.setItem("lastRole", "health_worker");
-        navigate("/worker-dashboard");
-      } else {
-        // No role found; sign out and prompt user
-        await supabase.auth.signOut();
+      if (error) {
+        console.error("Login error:", error);
+        setError(error.message);
         toast({
-          title: "No role assigned",
-          description: "Your account has no assigned role. Please contact support.",
+          title: "Login failed",
+          description: error.message,
           variant: "destructive",
         });
+        return;
       }
+
+      if (data.user) {
+        const { data: roles } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", data.user.id);
+
+        const roleList = (roles || []).map((r: any) => r.role);
+
+        // If a specific role was intended via the clicked button, enforce it strictly
+        if (intendedRole) {
+          if (roleList.includes(intendedRole)) {
+            localStorage.setItem("lastRole", intendedRole);
+            navigate(intendedRole === "health_worker" ? "/worker-dashboard" : "/villager-dashboard");
+            return;
+          } else {
+            // Logout immediately and show error if the account doesn't have that role
+            await supabase.auth.signOut();
+            toast({
+              title: "Wrong login type",
+              description: intendedRole === "health_worker"
+                ? "This account is not registered as a Health Worker. Please use the Villager login."
+                : "This account is not registered as a Villager. Please use the Health Worker login.",
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+
+        // No specific intent: route by available roles (prefer villager when ambiguous)
+        if (roleList.includes("villager")) {
+          localStorage.setItem("lastRole", "villager");
+          navigate("/villager-dashboard");
+        } else if (roleList.includes("health_worker")) {
+          localStorage.setItem("lastRole", "health_worker");
+          navigate("/worker-dashboard");
+        } else {
+          // No role found; sign out and prompt user
+          await supabase.auth.signOut();
+          toast({
+            title: "No role assigned",
+            description: "Your account has no assigned role. Please contact support.",
+            variant: "destructive",
+          });
+        }
+      }
+    } catch (err) {
+      setLoading(false);
+      console.error("Unexpected error during login:", err);
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
+      setError(errorMessage);
+      toast({
+        title: "Login failed",
+        description: errorMessage,
+        variant: "destructive",
+      });
     }
   };
 
@@ -93,38 +106,51 @@ const Auth = () => {
     setLoading(true);
     setError("");
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/`,
-        data: {
-          full_name: name,
-          role,
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/`,
+          data: {
+            full_name: name,
+            role,
+          },
         },
-      },
-    });
+      });
 
-    if (error) {
+      if (error) {
+        setLoading(false);
+        console.error("Registration error:", error);
+        setError(error.message);
+        toast({
+          title: "Registration failed",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
       setLoading(false);
-      setError(error.message);
+
+      toast({
+        title: "Registration successful!",
+        description: "You can now log in with your credentials.",
+      });
+
+      // Auto login after registration
+      await handleLogin(email, password, role);
+    } catch (err) {
+      setLoading(false);
+      console.error("Unexpected error during registration:", err);
+      const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred";
+      setError(errorMessage);
       toast({
         title: "Registration failed",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
-      return;
     }
-
-    setLoading(false);
-
-    toast({
-      title: "Registration successful!",
-      description: "You can now log in with your credentials.",
-    });
-
-    // Auto login after registration
-    await handleLogin(email, password, role);
   };
 
   return (
@@ -184,10 +210,13 @@ const Auth = () => {
                     <Input
                       id="worker-login-email"
                       type="email"
+                      name="email"
+                      autoComplete="email"
                       placeholder="worker@health.gov"
                       value={workerLogin.email}
                       onChange={(e) => setWorkerLogin({ ...workerLogin, email: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-primary/50 transition-all"
+                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -195,9 +224,13 @@ const Auth = () => {
                     <Input
                       id="worker-login-password"
                       type="password"
+                      name="password"
+                      autoComplete="current-password"
+                      placeholder="Enter your password"
                       value={workerLogin.password}
                       onChange={(e) => setWorkerLogin({ ...workerLogin, password: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-primary/50 transition-all"
+                      required
                     />
                   </div>
                   <Button
@@ -221,10 +254,14 @@ const Auth = () => {
                     <Label htmlFor="worker-register-name" className="text-sm font-medium">Full Name</Label>
                     <Input
                       id="worker-register-name"
+                      type="text"
+                      name="name"
+                      autoComplete="name"
                       placeholder="Dr. John Doe"
                       value={workerRegister.name}
                       onChange={(e) => setWorkerRegister({ ...workerRegister, name: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-primary/50 transition-all"
+                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -232,10 +269,13 @@ const Auth = () => {
                     <Input
                       id="worker-register-email"
                       type="email"
+                      name="email"
+                      autoComplete="email"
                       placeholder="worker@health.gov"
                       value={workerRegister.email}
                       onChange={(e) => setWorkerRegister({ ...workerRegister, email: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-primary/50 transition-all"
+                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -243,9 +283,14 @@ const Auth = () => {
                     <Input
                       id="worker-register-password"
                       type="password"
+                      name="password"
+                      autoComplete="new-password"
+                      placeholder="Minimum 6 characters"
                       value={workerRegister.password}
                       onChange={(e) => setWorkerRegister({ ...workerRegister, password: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-primary/50 transition-all"
+                      required
+                      minLength={6}
                     />
                   </div>
                   <Button
@@ -287,10 +332,13 @@ const Auth = () => {
                     <Input
                       id="villager-login-email"
                       type="email"
+                      name="email"
+                      autoComplete="email"
                       placeholder="villager@example.com"
                       value={villagerLogin.email}
                       onChange={(e) => setVillagerLogin({ ...villagerLogin, email: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-secondary/50 transition-all"
+                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -298,9 +346,13 @@ const Auth = () => {
                     <Input
                       id="villager-login-password"
                       type="password"
+                      name="password"
+                      autoComplete="current-password"
+                      placeholder="Enter your password"
                       value={villagerLogin.password}
                       onChange={(e) => setVillagerLogin({ ...villagerLogin, password: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-secondary/50 transition-all"
+                      required
                     />
                   </div>
                   <Button
@@ -324,10 +376,14 @@ const Auth = () => {
                     <Label htmlFor="villager-register-name" className="text-sm font-medium">Full Name</Label>
                     <Input
                       id="villager-register-name"
+                      type="text"
+                      name="name"
+                      autoComplete="name"
                       placeholder="Your Name"
                       value={villagerRegister.name}
                       onChange={(e) => setVillagerRegister({ ...villagerRegister, name: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-secondary/50 transition-all"
+                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -335,10 +391,13 @@ const Auth = () => {
                     <Input
                       id="villager-register-email"
                       type="email"
+                      name="email"
+                      autoComplete="email"
                       placeholder="villager@example.com"
                       value={villagerRegister.email}
                       onChange={(e) => setVillagerRegister({ ...villagerRegister, email: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-secondary/50 transition-all"
+                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -346,9 +405,14 @@ const Auth = () => {
                     <Input
                       id="villager-register-password"
                       type="password"
+                      name="password"
+                      autoComplete="new-password"
+                      placeholder="Minimum 6 characters"
                       value={villagerRegister.password}
                       onChange={(e) => setVillagerRegister({ ...villagerRegister, password: e.target.value })}
                       className="h-11 focus:ring-2 focus:ring-secondary/50 transition-all"
+                      required
+                      minLength={6}
                     />
                   </div>
                   <Button

@@ -317,6 +317,9 @@ def analyze_dataset(data):
         disease_data = df[df['disease_id'] == disease_id]
         print(f"\n  {disease_id}: {disease_name}")
         for symptom in sorted(symptom_cols):
+            # Skip symptom_count as it's a derived feature, not in probabilities
+            if symptom == 'symptom_count':
+                continue
             freq = disease_data[symptom].sum() / len(disease_data)
             expected = DISEASE_PATTERNS[disease_id]['symptom_probabilities'][symptom]
             print(f"    {symptom:20s}: {freq:.2%} (expected: {expected:.2%})")
