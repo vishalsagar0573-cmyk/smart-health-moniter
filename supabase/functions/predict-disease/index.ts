@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import trainedModel from "./trained_disease_model.json" with { type: "json" };
+// Model loaded dynamically below
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,6 +31,40 @@ interface TrainedModel {
     test_samples: number;
     training_accuracy: number;
     test_accuracy: number;
+  };
+}
+
+// Load and decompress model
+let trainedModel: TrainedModel;
+try {
+  const modelUrl = new URL('./trained_disease_model.json.gz', import.meta.url);
+  const response = await fetch(modelUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to load model: ${response.statusText}`);
+  }
+  const blob = await response.blob();
+  const ds = new DecompressionStream('gzip');
+  const decompressedStream = blob.stream().pipeThrough(ds);
+  const decompressedResponse = new Response(decompressedStream);
+  trainedModel = await decompressedResponse.json();
+  console.log("Model loaded successfully");
+} catch (e) {
+  console.error("Error loading model:", e);
+  // Initialize empty model to prevent crash
+  trainedModel = {
+    model_type: "Error",
+    n_estimators: 0,
+    feature_names: [],
+    classes: [],
+    disease_metadata: [],
+    trees: [],
+    feature_importances: {},
+    training_info: {
+      training_samples: 0,
+      test_samples: 0,
+      training_accuracy: 0,
+      test_accuracy: 0
+    }
   };
 }
 
@@ -181,7 +216,7 @@ function calculateSimilarity(symptoms: string[], diseasePattern: typeof DISEASE_
   let score = 0;
   let criticalMatches = 0;
   let commonMatches = 0;
-  
+
   // Check critical symptoms (higher weight)
   for (const symptom of symptoms) {
     if (diseasePattern.critical_symptoms.includes(symptom)) {
@@ -192,11 +227,11 @@ function calculateSimilarity(symptoms: string[], diseasePattern: typeof DISEASE_
       score += 1.0;
     }
   }
-  
+
   // Normalize by total possible symptoms
   const totalSymptoms = diseasePattern.common_symptoms.length;
   const normalizedScore = score / (totalSymptoms * 1.5);
-  
+
   // Apply disease weight
   return normalizedScore * diseasePattern.weight;
 }
@@ -221,11 +256,11 @@ function predictWithSimilarity(
   if (symptoms.length === 1) {
     const singleSymptom = symptoms[0];
     const fallback = SPARSE_SYMPTOM_PATTERNS[singleSymptom];
-    
+
     if (fallback) {
-      const riskLevel = determineRiskLevel(symptoms, peopleAffected, waterQuality, "Safe");
+      const riskLevel = determineRiskLevel(symptoms, peopleAffected, waterQuality, "Low");
       const urgency = determineUrgency(symptoms, riskLevel);
-      
+
       return {
         predicted_disease: fallback.disease,
         confidence: fallback.confidence,
@@ -238,41 +273,41 @@ function predictWithSimilarity(
       };
     }
   }
-  
+
   // Calculate similarity scores for all diseases
-  const scores: Array<{diseaseId: number; score: number; pattern: typeof DISEASE_PATTERNS[0]}> = [];
-  
+  const scores: Array<{ diseaseId: number; score: number; pattern: typeof DISEASE_PATTERNS[0] }> = [];
+
   for (const [diseaseIdStr, pattern] of Object.entries(DISEASE_PATTERNS)) {
     const diseaseId = parseInt(diseaseIdStr);
     const score = calculateSimilarity(symptoms, pattern);
     scores.push({ diseaseId, score, pattern });
   }
-  
+
   // Sort by score (highest first)
   scores.sort((a, b) => b.score - a.score);
-  
+
   // Get best match
   const bestMatch = scores[0];
-  
+
   // If no good match, use intelligent fallback
   if (bestMatch.score < 0.1) {
     return intelligentFallback(symptoms, peopleAffected, waterQuality, model);
   }
-  
+
   // Calculate confidence based on score
   const confidence = Math.min(0.45 + (bestMatch.score * 0.3), 0.75);
-  
+
   // Get disease info
   const diseaseInfo = model.disease_metadata.find(d => d.id === bestMatch.diseaseId);
   const diseaseName = diseaseInfo ? diseaseInfo.name : bestMatch.pattern.name;
-  
+
   // Determine risk and urgency
-  const riskLevel = determineRiskLevel(symptoms, peopleAffected, waterQuality, "Safe");
+  const riskLevel = determineRiskLevel(symptoms, peopleAffected, waterQuality, "Low");
   const urgency = determineUrgency(symptoms, riskLevel);
-  
+
   // Generate advice
   const advice = generateAdvice(diseaseName, riskLevel, urgency, symptoms, peopleAffected);
-  
+
   return {
     predicted_disease: diseaseName + " (Early Stage)",
     confidence: confidence,
@@ -303,11 +338,11 @@ function intelligentFallback(
 } {
   // Combination patterns
   const symptomSet = new Set(symptoms);
-  
+
   let predictedDisease = "General Mild Infection";
   let confidence = 0.50;
   let baseAdvice = "Monitor symptoms closely, drink clean water, maintain hygiene.";
-  
+
   // Check common combinations
   if (symptomSet.has("headache") && symptomSet.has("loss_appetite")) {
     predictedDisease = "Typhoid Fever (Early Stage)";
@@ -326,10 +361,10 @@ function intelligentFallback(
     confidence = 0.52;
     baseAdvice = "General viral symptoms. Rest adequately, stay hydrated, and monitor for additional symptoms.";
   }
-  
-  const riskLevel = determineRiskLevel(symptoms, peopleAffected, waterQuality, "Safe");
+
+  const riskLevel = determineRiskLevel(symptoms, peopleAffected, waterQuality, "Low");
   const urgency = determineUrgency(symptoms, riskLevel);
-  
+
   return {
     predicted_disease: predictedDisease,
     confidence: confidence,
@@ -356,6 +391,96 @@ function executeTree(node: TreeNode, features: ExtendedFeatures): number {
   }
 }
 
+// STRICT RULES IMPLEMENTATION
+function applyStrictRules(symptoms: string[], peopleAffected: number): {
+  predicted_disease: string;
+  risk_level: string;
+  advice: string;
+  matched: boolean;
+  urgency: string;
+} {
+  // Normalize symptoms
+  const s = new Set(symptoms.map(sym => sym.toLowerCase().replace("other: ", "").trim()));
+
+  // Rule: Diarrhea + Vomiting + Dehydration -> Cholera / Acute Gastroenteritis
+  if (s.has("diarrhea") && s.has("vomiting") && s.has("dehydration")) {
+    return {
+      predicted_disease: "Cholera",
+      risk_level: "High",
+      advice: "- Start ORS immediately to prevent dehydration.\n- Avoid contaminated water and food.\n- Seek urgent medical attention if symptoms worsen.",
+      matched: true,
+      urgency: "Emergency"
+    };
+  }
+
+  // Rule: Fever + Body Pain + Headache -> Viral Fever / Dengue
+  if (s.has("fever") && s.has("body_pain") && s.has("headache")) {
+    if (s.has("rash") || s.has("nausea")) {
+      return {
+        predicted_disease: "Dengue",
+        risk_level: "High",
+        advice: "- Rest and stay hydrated.\n- Take paracetamol for fever (avoid aspirin).\n- Seek medical help if bleeding occurs or symptoms worsen.",
+        matched: true,
+        urgency: "Urgent"
+      };
+    }
+    return {
+      predicted_disease: "Viral Fever",
+      risk_level: "Moderate",
+      advice: "- Rest and drink plenty of fluids.\n- Monitor temperature regularly.\n- Consult a doctor if fever persists for more than 3 days.",
+      matched: true,
+      urgency: "Warning"
+    };
+  }
+
+  // Rule: Jaundice + Dark Urine -> Hepatitis A/E
+  if (s.has("jaundice") && s.has("dark_urine")) {
+    return {
+      predicted_disease: "Hepatitis A/E",
+      risk_level: "High",
+      advice: "- Rest completely and avoid physical exertion.\n- Eat a low-fat diet and avoid alcohol.\n- Drink boiled water and maintain strict hygiene.",
+      matched: true,
+      urgency: "Urgent"
+    };
+  }
+
+  // Rule: Cough + Fever -> Respiratory Infection
+  // Note: 'cough' might come from "Other" input or be added to the list
+  if ((s.has("cough") || s.has("persistent cough")) && s.has("fever")) {
+    return {
+      predicted_disease: "Respiratory Infection",
+      risk_level: "Moderate",
+      advice: "- Cover mouth when coughing and wash hands often.\n- Drink warm fluids and rest.\n- Seek medical help if breathing becomes difficult.",
+      matched: true,
+      urgency: "Warning"
+    };
+  }
+
+  // Rule: Blood in stool -> Dysentery
+  if (s.has("blood_stool")) {
+    return {
+      predicted_disease: "Dysentery",
+      risk_level: "High",
+      advice: "- Seek medical attention immediately.\n- Drink ORS and boiled water.\n- Isolate to prevent spread.",
+      matched: true,
+      urgency: "Emergency"
+    };
+  }
+
+  // Rule: 2 or more water-borne symptoms (Diarrhea, Vomiting, Stomach Pain)
+  if ((s.has("diarrhea") && s.has("vomiting")) || (s.has("diarrhea") && s.has("stomach_pain"))) {
+    return {
+      predicted_disease: "Acute Gastroenteritis",
+      risk_level: "High",
+      advice: "- Drink plenty of fluids and ORS.\n- Eat light, hygienic food.\n- Consult a health worker if symptoms persist.",
+      matched: true,
+      urgency: "Urgent"
+    };
+  }
+
+  return { predicted_disease: "", risk_level: "", advice: "", matched: false, urgency: "" };
+}
+
 // Enhanced prediction with urgency level and key symptoms
 function predictDisease(model: TrainedModel, symptoms: string[], peopleAffected: number = 1, waterQuality?: {
   ph?: number;
@@ -372,7 +497,24 @@ function predictDisease(model: TrainedModel, symptoms: string[], peopleAffected:
   advice: string;
   key_symptoms_detected: string[];
   model_accuracy: number;
+  matched_symptoms: string[];
 } {
+  // APPLY STRICT RULES FIRST
+  const strictResult = applyStrictRules(symptoms, peopleAffected);
+  if (strictResult.matched) {
+    const keySymptoms = getKeySymptoms(symptoms);
+    return {
+      predicted_disease: strictResult.predicted_disease,
+      confidence: 0.95, // High confidence for strict rules
+      risk_level: strictResult.risk_level,
+      urgency: strictResult.urgency,
+      advice: strictResult.advice,
+      key_symptoms_detected: keySymptoms,
+      model_accuracy: model.training_info.test_accuracy,
+      matched_symptoms: keySymptoms
+    };
+  }
+
   // Convert symptoms array to base feature vector
   const baseFeatures: SymptomFeatures = {
     diarrhea: symptoms.includes('diarrhea') ? 1 : 0,
@@ -390,10 +532,10 @@ function predictDisease(model: TrainedModel, symptoms: string[], peopleAffected:
     blood_stool: symptoms.includes('blood_stool') ? 1 : 0,
     loss_appetite: symptoms.includes('loss_appetite') ? 1 : 0,
   };
-  
+
   // Calculate symptom count
   const symptomCount = Object.values(baseFeatures).reduce((sum, val) => sum + val, 0);
-  
+
   // Build extended features with engineered features
   const features: ExtendedFeatures = {
     ...baseFeatures,
@@ -418,7 +560,7 @@ function predictDisease(model: TrainedModel, symptoms: string[], peopleAffected:
     return {
       predicted_disease: "General Health Check",
       confidence: 0.5,
-      risk_level: "Safe",
+      risk_level: "Low",
       urgency: "Normal",
       advice: "✅ No concerning symptoms reported. Continue maintaining good hygiene and water quality practices. Regular health monitoring is recommended.",
       key_symptoms_detected: [],
@@ -426,7 +568,7 @@ function predictDisease(model: TrainedModel, symptoms: string[], peopleAffected:
       matched_symptoms: []
     };
   }
-  
+
   // For sparse symptoms (1-2 symptoms), use similarity scoring
   if (symptoms.length <= 2) {
     return predictWithSimilarity(model, symptoms, peopleAffected, waterQuality);
@@ -465,20 +607,20 @@ function predictDisease(model: TrainedModel, symptoms: string[], peopleAffected:
 
   // Get disease metadata
   const diseaseInfo = model.disease_metadata.find(d => d.id === predictedClass);
-  
+
   if (!diseaseInfo) {
     return fallbackPrediction(symptoms, model, peopleAffected, waterQuality);
   }
 
   // Determine risk level based on symptoms, people affected, and water quality
   const riskLevel = determineRiskLevel(symptoms, peopleAffected, waterQuality, diseaseInfo.risk_level);
-  
+
   // Determine urgency level
   const urgency = determineUrgency(symptoms, riskLevel);
-  
+
   // Get key symptoms detected
   const keySymptoms = getKeySymptoms(symptoms);
-  
+
   // Generate enhanced advice
   const advice = generateAdvice(diseaseInfo.name, riskLevel, urgency, keySymptoms, peopleAffected);
 
@@ -504,29 +646,29 @@ function determineRiskLevel(
   // Critical symptoms
   const criticalSymptoms = ['blood_stool', 'jaundice', 'dehydration'];
   const hasCriticalSymptom = symptoms.some(s => criticalSymptoms.includes(s));
-  
+
   // Severe symptoms
   const severeSymptoms = ['fever', 'vomiting', 'diarrhea', 'dark_urine'];
   const severeCount = symptoms.filter(s => severeSymptoms.includes(s)).length;
-  
+
   // Many people affected
   const manyPeopleAffected = peopleAffected > 3;
-  
+
   // Poor water quality
   const poorWaterQuality = waterQuality && (
     waterQuality.ph < 6.5 || waterQuality.ph > 8.5 ||
     waterQuality.turbidity > 5
   );
-  
+
   // Determine final risk level
   if (hasCriticalSymptom || (severeCount >= 3 && manyPeopleAffected)) {
-    return "Critical";
+    return "High";
   } else if (severeCount >= 3 || manyPeopleAffected || poorWaterQuality) {
     return "High";
   } else if (symptoms.length >= 2 || peopleAffected > 1) {
     return "Moderate";
   } else {
-    return "Safe";
+    return "Low";
   }
 }
 
@@ -534,11 +676,9 @@ function determineRiskLevel(
 function determineUrgency(symptoms: string[], riskLevel: string): string {
   const emergencySymptoms = ['blood_stool', 'jaundice', 'dehydration'];
   const hasEmergencySymptom = symptoms.some(s => emergencySymptoms.includes(s));
-  
-  if (hasEmergencySymptom || riskLevel === "Critical") {
+
+  if (hasEmergencySymptom || riskLevel === "Severe" || riskLevel === "Critical" || riskLevel === "High") {
     return "Emergency";
-  } else if (riskLevel === "High") {
-    return "Urgent";
   } else if (riskLevel === "Moderate") {
     return "Warning";
   } else {
@@ -561,7 +701,7 @@ function getKeySymptoms(symptoms: string[]): string[] {
     'nausea',
     'weakness'
   ];
-  
+
   return symptoms
     .filter(s => prioritySymptoms.includes(s))
     .slice(0, 5); // Return top 5 key symptoms
@@ -575,47 +715,28 @@ function generateAdvice(
   keySymptoms: string[],
   peopleAffected: number
 ): string {
+  // If strict rules provided specific advice, we might not need this, but it's used by ML path
   let advice = "";
-  
-  // Urgency-based prefix
-  if (urgency === "Emergency") {
-    advice += "🚨 EMERGENCY: ";
-  } else if (urgency === "Urgent") {
-    advice += "⚠️ URGENT: ";
-  } else if (urgency === "Warning") {
-    advice += "⚠️ WARNING: ";
-  } else {
-    advice += "ℹ️ ";
-  }
-  
+
   // Disease-specific advice
   if (disease.includes("Cholera") || disease.includes("Gastroenteritis")) {
-    advice += "Drink boiled water immediately, give ORS (Oral Rehydration Solution), avoid contaminated water";
-    if (urgency === "Emergency" || urgency === "Urgent") {
-      advice += ", and visit the nearest health center URGENTLY";
-    }
-    advice += ". Maintain strict hand hygiene and food safety.";
+    advice += "- Start ORS immediately to prevent dehydration.\n- Avoid contaminated water and food.\n- Seek urgent medical attention if symptoms worsen.";
   } else if (disease.includes("Typhoid")) {
-    advice += "Seek medical attention immediately for antibiotic treatment. Drink only boiled water, maintain strict hygiene, rest adequately, and avoid preparing food for others.";
+    advice += "- Seek medical attention for antibiotics.\n- Drink only boiled water.\n- Maintain strict hygiene and rest.";
   } else if (disease.includes("Hepatitis")) {
-    advice += "Seek immediate medical evaluation. Rest completely, avoid alcohol, eat nutritious food, drink boiled water, and maintain excellent hygiene to prevent spread.";
+    advice += "- Rest completely and avoid physical exertion.\n- Eat a low-fat diet and avoid alcohol.\n- Drink boiled water and maintain strict hygiene.";
   } else if (disease.includes("Dysentery")) {
-    advice += "Seek medical care for proper treatment. Drink boiled water, take ORS, avoid solid foods initially, maintain hygiene, and isolate to prevent spread.";
+    advice += "- Seek medical care for proper treatment.\n- Drink boiled water and ORS.\n- Isolate to prevent spread.";
   } else if (disease.includes("Skin Infection")) {
-    advice += "Keep affected area clean and dry, avoid scratching, use clean water for bathing, apply prescribed medication, and consult a health worker if it worsens.";
-  } else if (disease.includes("Malaria")) {
-    advice += "Seek immediate medical testing and treatment. Rest, stay hydrated, use mosquito nets, eliminate standing water, and take prescribed antimalarial medication.";
-  } else if (disease.includes("Diarrheal")) {
-    advice += "Drink plenty of boiled water and ORS, avoid contaminated food/water, maintain hygiene, rest, and monitor for worsening symptoms.";
+    advice += "- Keep affected area clean and dry.\n- Avoid scratching.\n- Consult a health worker if it worsens.";
+  } else if (disease.includes("Malaria") || disease.includes("Dengue")) {
+    advice += "- Seek immediate medical testing.\n- Rest and stay hydrated.\n- Use mosquito nets and eliminate standing water.";
+  } else if (disease.includes("Viral")) {
+    advice += "- Rest and drink plenty of fluids.\n- Monitor temperature.\n- Consult a doctor if symptoms persist.";
   } else {
-    advice += "Monitor symptoms closely, drink only boiled water, maintain good hygiene, rest adequately, and consult a health worker if symptoms persist or worsen.";
+    advice += "- Monitor symptoms closely.\n- Drink only boiled water.\n- Consult a health worker if symptoms persist or worsen.";
   }
-  
-  // Add community warning if many people affected
-  if (peopleAffected > 3) {
-    advice += ` ⚠️ COMMUNITY ALERT: ${peopleAffected} people affected - possible outbreak. Inform health authorities immediately and ensure community uses safe water sources.`;
-  }
-  
+
   return advice;
 }
 
@@ -633,45 +754,46 @@ function fallbackPrediction(
   advice: string;
   key_symptoms_detected: string[];
   model_accuracy: number;
+  matched_symptoms: string[];
 } {
   const hasSevereSymptoms = symptoms.some(s =>
     ["blood_stool", "jaundice", "dehydration"].includes(s)
   );
   const hasMultipleSymptoms = symptoms.length >= 3;
-  
+
   const keySymptoms = getKeySymptoms(symptoms);
   const riskLevel = determineRiskLevel(symptoms, peopleAffected, waterQuality, hasSevereSymptoms ? "High" : "Moderate");
   const urgency = determineUrgency(symptoms, riskLevel);
 
   if (hasSevereSymptoms) {
     return {
-      predicted_disease: "Potential Water-borne Illness (Severe)",
+      predicted_disease: "Acute Gastroenteritis", // More specific than "Water-borne Illness"
       confidence: 0.7,
       risk_level: riskLevel,
       urgency: urgency,
-      advice: generateAdvice("Water-borne Illness", riskLevel, urgency, keySymptoms, peopleAffected),
+      advice: "- Start ORS immediately.\n- Seek medical attention.\n- Drink clean water.",
       key_symptoms_detected: keySymptoms,
       model_accuracy: model.training_info.test_accuracy,
       matched_symptoms: keySymptoms
     };
   } else if (hasMultipleSymptoms) {
     return {
-      predicted_disease: "Possible Water-borne Infection",
+      predicted_disease: "Viral Gastroenteritis",
       confidence: 0.65,
       risk_level: riskLevel,
       urgency: urgency,
-      advice: generateAdvice("Water-borne Infection", riskLevel, urgency, keySymptoms, peopleAffected),
+      advice: "- Stay hydrated.\n- Rest and monitor symptoms.\n- Consult a doctor if worsening.",
       key_symptoms_detected: keySymptoms,
       model_accuracy: model.training_info.test_accuracy,
       matched_symptoms: keySymptoms
     };
   } else {
     return {
-      predicted_disease: "Minor Health Concern",
+      predicted_disease: "Mild Viral Infection",
       confidence: 0.6,
-      risk_level: "Safe",
+      risk_level: "Low",
       urgency: "Normal",
-      advice: "ℹ️ Monitor symptoms, maintain good hygiene practices, drink boiled water, and consult a health worker if condition worsens.",
+      advice: "- Monitor symptoms.\n- Maintain hygiene.\n- Rest.",
       key_symptoms_detected: keySymptoms,
       model_accuracy: model.training_info.test_accuracy,
       matched_symptoms: keySymptoms

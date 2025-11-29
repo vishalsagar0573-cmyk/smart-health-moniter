@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { LogOut, Droplets, ThermometerSun, Activity, AlertTriangle, CheckCircle2, Info, MessageSquare, Upload, Camera, Trash2 } from "lucide-react";
+import { LogOut, Droplets, ThermometerSun, Activity, AlertTriangle, CheckCircle2, Info, MessageSquare, Upload, Camera, Trash2, Wifi, WifiOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getAutoAdvice } from "@/utils/adviceTemplates";
 import {
@@ -40,6 +40,7 @@ interface HealthReport {
   disease_advice?: string;
   possible_organism?: string;
   health_advice?: string;
+  created_at?: string;
 }
 
 const VillagerDashboard = () => {
@@ -72,12 +73,26 @@ const VillagerDashboard = () => {
   const [deleteReportId, setDeleteReportId] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<'online' | 'offline' | 'checking'>('checking');
 
   useEffect(() => {
     fetchCurrentUser();
     fetchMyReports();
     fetchVillageAdvice();
+    checkBackendStatus();
+    const interval = setInterval(checkBackendStatus, 10000);
+    return () => clearInterval(interval);
   }, []);
+
+  const checkBackendStatus = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/health');
+      if (res.ok) setBackendStatus('online');
+      else setBackendStatus('offline');
+    } catch {
+      setBackendStatus('offline');
+    }
+  };
 
   const fetchCurrentUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -108,8 +123,8 @@ const VillagerDashboard = () => {
   };
 
   const toggleSymptom = (symptom: string) => {
-    setSymptoms(prev => 
-      prev.includes(symptom) 
+    setSymptoms(prev =>
+      prev.includes(symptom)
         ? prev.filter(s => s !== symptom)
         : [...prev, symptom]
     );
@@ -119,24 +134,63 @@ const VillagerDashboard = () => {
     if (selectedSymptoms.length === 0 && !otherSymptom) return null;
 
     try {
-      const allSymptoms = otherSymptom 
+      const allSymptoms = otherSymptom
         ? [...selectedSymptoms, `other: ${otherSymptom}`]
         : selectedSymptoms;
 
-      const { data: prediction, error } = await supabase.functions.invoke('predict-disease', {
+      const { data: response, error } = await supabase.functions.invoke('predict-disease', {
         body: { symptoms: allSymptoms }
       });
 
       if (error) throw error;
-      return prediction.prediction;
+      console.log('Raw API Response (JSON):', JSON.stringify(response, null, 2));
+
+      if (!response || (response.success === false)) {
+        throw new Error(response?.error || 'Prediction failed');
+      }
+
+      // The backend returns flat data: { predicted_disease, risk_level, ... }
+      // But we also handle nested { prediction: ... } just in case of version mismatch
+      const data = response.prediction || response;
+
+      console.log('Parsed Prediction Data Keys:', Object.keys(data));
+
+      return {
+        disease: data.predicted_disease || data.disease || "Unknown Disease",
+        riskLevel: data.risk_level || data.riskLevel || "Moderate",
+        advice: data.advice || "Please consult a doctor.",
+        confidence: data.confidence || 0
+      };
     } catch (error) {
       console.error('Disease prediction error:', error);
       return {
         disease: "Unable to Predict",
-        risk_level: "Moderate",
+        riskLevel: "Moderate",
         advice: "⚠️ Please consult with a health worker for proper diagnosis.",
         confidence: 0.5,
       };
+    }
+  };
+
+  const predictMicroorganisms = async (data: typeof formData, selectedSymptoms: string[]) => {
+    try {
+      const allSymptoms = otherSymptom
+        ? [...selectedSymptoms, `other: ${otherSymptom}`]
+        : selectedSymptoms;
+
+      const { data: response, error } = await supabase.functions.invoke('predict-microorganisms', {
+        body: {
+          symptoms: allSymptoms,
+          pH: data.water_ph,
+          turbidity: data.water_turbidity
+        }
+      });
+
+      if (error) throw error;
+      return response;
+    } catch (error) {
+      console.error('Microorganism prediction error:', error);
+      return null;
     }
   };
 
@@ -150,6 +204,7 @@ const VillagerDashboard = () => {
           pH: data.water_ph,
           turbidity: data.water_turbidity,
           predictedDisease: diseasePrediction?.disease || 'None',
+          people_affected: peopleAffected,
         }
       });
 
@@ -188,7 +243,7 @@ const VillagerDashboard = () => {
     // Reset validation status when new image is uploaded
     setImageValidated(false);
     setUploadedImage(file);
-    
+
     // Create preview
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -218,46 +273,46 @@ const VillagerDashboard = () => {
         .getPublicUrl(fileName);
 
       // Analyze with AI (includes validation)
-      const { data: analysis, error: analysisError } = await supabase.functions.invoke(
-        'analyze-water-image',
-        {
-          body: { imageUrl: publicUrl }
-        }
-      );
+      // Analyze with local Python service (OpenCV)
+      console.log("Calling local OpenCV service...");
+      const response = await fetch('http://localhost:8000/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ imageUrl: publicUrl }),
+      });
 
-      if (analysisError) throw analysisError;
-
-      // Check if image validation failed
-      if (analysis.is_valid === false || (!analysis.success && analysis.error)) {
-        // Clear the uploaded image and preview
-        setUploadedImage(null);
-        setImagePreview(null);
+      if (!response.ok) {
         setImageValidated(false);
-        
+        const errorData = await response.json().catch(() => ({}));
+
         // Show validation error message
         toast({
           title: "Invalid Image",
-          description: analysis.error || "Image is not a valid water sample. Report not submitted. Please upload a photo of water in a white cup/bottle.",
+          description: errorData.message || "Image rejected. Please upload a clear water sample.",
           variant: "destructive",
         });
         return;
       }
 
-      if (analysis.success) {
+      const analysis = await response.json();
+
+      if (analysis.status === 'success') {
         setImageValidated(true);
         setFormData(prev => ({
           ...prev,
-          water_ph: parseFloat(analysis.water_ph.toFixed(1)),
-          water_turbidity: parseFloat(analysis.water_turbidity.toFixed(2)),
+          water_ph: analysis.estimated_ph,
+          water_turbidity: analysis.estimated_turbidity,
         }));
 
         toast({
           title: "Image analyzed successfully!",
-          description: `pH: ${analysis.water_ph.toFixed(1)}, Turbidity: ${analysis.water_turbidity.toFixed(2)} NTU - ${analysis.analysis || "Water quality metrics extracted"}`,
+          description: `${analysis.message} (pH: ${analysis.estimated_ph}, Turbidity: ${analysis.estimated_turbidity} NTU)`,
         });
       } else {
         setImageValidated(false);
-        throw new Error(analysis.error || "Analysis failed");
+        throw new Error(analysis.message || "Analysis failed");
       }
     } catch (error: any) {
       console.error('Image analysis error:', error);
@@ -265,12 +320,20 @@ const VillagerDashboard = () => {
       setUploadedImage(null);
       setImagePreview(null);
       setImageValidated(false);
-      
-      toast({
-        title: "Image analysis failed",
-        description: error.message || "Please enter water quality values manually",
-        variant: "destructive",
-      });
+
+      if (error.message && error.message.includes("Failed to fetch")) {
+        toast({
+          title: "Connection Error",
+          description: "Could not connect to analysis service. Please ensure the backend is running locally.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Image analysis failed",
+          description: error.message || "Please enter water quality values manually. Ensure image is clear water in a white cup.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setAnalyzingImage(false);
     }
@@ -300,15 +363,24 @@ const VillagerDashboard = () => {
       diseasePrediction = await predictDisease(symptoms);
     }
 
+    // Get microorganism prediction
+    let microorganismPrediction = null;
+    if (hasIllness || formData.water_ph < 6.5 || formData.water_turbidity > 2) {
+      microorganismPrediction = await predictMicroorganisms(formData, symptoms);
+    }
+
     // Get risk prediction based on water quality, symptoms, AND predicted disease
     const prediction = await predictRisk(formData, diseasePrediction);
 
-    const allSymptoms = otherSymptom 
+    const allSymptoms = otherSymptom
       ? [...symptoms, `other: ${otherSymptom}`]
       : symptoms;
 
     const reportData: any = {
       user_id: userId,
+      reporter_name: "Villager",
+      reporter_role: "villager", // Fixed: Lowercase to match database constraint
+      district: "Unknown",
       ...formData,
       fever_cases: symptoms.includes('fever') ? peopleAffected : 0,
       diarrhea_cases: symptoms.includes('diarrhea') ? peopleAffected : 0,
@@ -316,12 +388,12 @@ const VillagerDashboard = () => {
       symptoms: hasIllness ? allSymptoms : [],
       people_affected: hasIllness ? peopleAffected : 0,
       predicted_disease: diseasePrediction?.disease || null,
-      disease_risk_level: diseasePrediction?.risk_level || null,
+      disease_risk_level: diseasePrediction?.riskLevel || null,
       disease_advice: diseasePrediction?.advice || null,
       alert_level: prediction.alert_level,
       alert_message: prediction.alert_message,
-      possible_organism: prediction.possible_organism || null,
-      health_advice: prediction.health_advice || null,
+      possible_organism: microorganismPrediction?.microorganisms?.join(", ") || prediction.possible_organism || null,
+      health_advice: microorganismPrediction?.message || prediction.health_advice || null,
     };
 
     // Add location if enabled
@@ -337,7 +409,7 @@ const VillagerDashboard = () => {
       const { data: uploadData } = await supabase.storage
         .from('water-samples')
         .upload(fileName, uploadedImage);
-      
+
       if (uploadData) {
         const { data: { publicUrl } } = supabase.storage
           .from('water-samples')
@@ -518,7 +590,7 @@ const VillagerDashboard = () => {
       <header className="border-b bg-gradient-to-r from-card via-card to-primary/5 shadow-medical sticky top-0 z-10 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-5 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold gradient-medical-text">Villager Dashboard</h1>
+            <h1 className="text-2xl md:text-3xl font-bold gradient-medical-text">VillagerDashboard</h1>
             <p className="text-sm text-muted-foreground mt-1">Report Your Health Data & Water Quality</p>
           </div>
           <Button onClick={handleLogout} variant="outline" className="gap-2 shadow-sm hover:shadow-md transition-all">
@@ -529,6 +601,19 @@ const VillagerDashboard = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8 max-w-4xl">
+        {/* Backend Status Alert */}
+        {backendStatus === 'offline' && (
+          <Alert className="mb-4 border-red-500 bg-red-50 animate-fade-in">
+            <WifiOff className="h-5 w-5 text-red-600" />
+            <AlertTitle className="text-red-800 font-semibold">Analysis Service Offline</AlertTitle>
+            <AlertDescription className="text-red-700">
+              The water analysis service is not connected. Please ensure the backend is running locally.
+              <br />
+              <span className="text-xs font-mono bg-red-100 px-1 rounded">npm run start:backend</span>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Health Tips */}
         <Alert className="mb-8 border-secondary/50 bg-gradient-to-r from-secondary/10 to-secondary/5 shadow-medical animate-fade-in">
           <Info className="h-5 w-5 text-secondary" />
@@ -673,19 +758,22 @@ const VillagerDashboard = () => {
 
                     {diseasePreview && (
                       <Alert className={
-                        diseasePreview.riskLevel === "High" ? "border-destructive bg-destructive/5" :
-                        diseasePreview.riskLevel === "Moderate" ? "border-yellow-500 bg-yellow-500/5" :
-                        "border-green-500 bg-green-500/5"
+                        (diseasePreview.riskLevel === "High" || diseasePreview.riskLevel === "Severe" || diseasePreview.riskLevel === "Critical") ? "border-red-500 bg-red-50" :
+                          diseasePreview.riskLevel === "Moderate" ? "border-blue-500 bg-blue-50" :
+                            "border-green-500 bg-green-50"
                       }>
                         <AlertTriangle className={
-                          diseasePreview.riskLevel === "High" ? "h-5 w-5 text-destructive" :
-                          diseasePreview.riskLevel === "Moderate" ? "h-5 w-5 text-yellow-500" :
-                          "h-5 w-5 text-green-500"
+                          (diseasePreview.riskLevel === "High" || diseasePreview.riskLevel === "Severe" || diseasePreview.riskLevel === "Critical") ? "h-5 w-5 text-red-600" :
+                            diseasePreview.riskLevel === "Moderate" ? "h-5 w-5 text-blue-600" :
+                              "h-5 w-5 text-green-600"
                         } />
-                        <AlertTitle className="text-base">
+                        <AlertTitle className={`text-base font-bold ${(diseasePreview.riskLevel === "High" || diseasePreview.riskLevel === "Severe" || diseasePreview.riskLevel === "Critical") ? "text-red-700" :
+                          diseasePreview.riskLevel === "Moderate" ? "text-blue-700" :
+                            "text-green-700"
+                          }`}>
                           🧾 Possible Disease: {diseasePreview.disease} ({diseasePreview.riskLevel} Risk)
                         </AlertTitle>
-                        <AlertDescription className="text-sm mt-2">
+                        <AlertDescription className="text-sm mt-2 text-foreground/80">
                           {diseasePreview.advice}
                         </AlertDescription>
                       </Alert>
@@ -712,7 +800,7 @@ const VillagerDashboard = () => {
                 <p className="text-sm text-muted-foreground">
                   Our AI will automatically extract pH and turbidity values from your photo.
                 </p>
-                
+
                 <div className="flex items-center gap-4">
                   <Label htmlFor="water_image" className="cursor-pointer">
                     <div className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
@@ -737,9 +825,9 @@ const VillagerDashboard = () => {
 
                 {imagePreview && (
                   <div className="mt-3">
-                    <img 
-                      src={imagePreview} 
-                      alt="Water sample preview" 
+                    <img
+                      src={imagePreview}
+                      alt="Water sample preview"
                       className="w-full max-w-md h-48 object-cover rounded-lg border-2 border-primary/20"
                     />
                   </div>
@@ -814,9 +902,9 @@ const VillagerDashboard = () => {
                 </p>
               </div>
 
-              <Button 
-                type="submit" 
-                className="w-full bg-secondary hover:bg-secondary/90 h-12 text-base font-medium shadow-md hover:shadow-lg transition-all duration-300" 
+              <Button
+                type="submit"
+                className="w-full bg-secondary hover:bg-secondary/90 h-12 text-base font-medium shadow-md hover:shadow-lg transition-all duration-300"
                 disabled={loading}
               >
                 {loading ? (
@@ -849,12 +937,12 @@ const VillagerDashboard = () => {
             <CardContent>
               <div className="space-y-4">
                 {villageAdvice.map((advice) => {
-                  const borderColor = 
-                    advice.risk_level === "high" 
-                      ? "border-l-destructive" 
-                      : advice.risk_level === "moderate" 
-                      ? "border-l-warning" 
-                      : "border-l-success";
+                  const borderColor =
+                    advice.risk_level === "high"
+                      ? "border-l-destructive"
+                      : advice.risk_level === "moderate"
+                        ? "border-l-warning"
+                        : "border-l-success";
 
                   return (
                     <div
@@ -866,11 +954,11 @@ const VillagerDashboard = () => {
                         <Badge
                           variant={advice.risk_level === "high" ? "destructive" : "default"}
                           className={
-                            advice.risk_level === "moderate" 
-                              ? "bg-warning text-warning-foreground" 
+                            advice.risk_level === "moderate"
+                              ? "bg-warning text-warning-foreground"
                               : advice.risk_level === "safe"
-                              ? "bg-success"
-                              : ""
+                                ? "bg-success"
+                                : ""
                           }
                         >
                           {advice.risk_level.toUpperCase()} RISK
@@ -980,118 +1068,123 @@ const VillagerDashboard = () => {
                     ? computeBiology(report.water_ph, report.water_turbidity)
                     : { possible_organism: report.possible_organism, health_advice: report.health_advice };
                   return (
-                  <div key={report.id} className="border rounded-lg p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold">{report.village_name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(report.report_date).toLocaleDateString()}
-                        </p>
-                      </div>
-                      {report.disease_risk_level ? (
-                        <Badge 
-                          variant={
-                            report.disease_risk_level === "High" ? "destructive" : 
-                            report.disease_risk_level === "Moderate" ? "default" : 
-                            "outline"
-                          } 
-                          className="gap-1"
-                        >
-                          {report.disease_risk_level === "High" && <AlertTriangle className="h-3 w-3" />}
-                          {report.disease_risk_level === "Moderate" && <Info className="h-3 w-3" />}
-                          {report.disease_risk_level === "Low" && <CheckCircle2 className="h-3 w-3" />}
-                          {report.disease_risk_level} Risk
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-success gap-1">
-                          <CheckCircle2 className="h-3 w-3" />
-                          No Symptoms Reported
-                        </Badge>
-                      )}
-                    </div>
-
-                    {report.predicted_disease ? (
-                      <Alert className={
-                        report.disease_risk_level === "High" ? "border-destructive bg-destructive/5" :
-                        report.disease_risk_level === "Moderate" ? "border-yellow-500 bg-yellow-500/5" :
-                        "border-green-500 bg-green-500/5"
-                      }>
-                        <AlertTriangle className={
-                          report.disease_risk_level === "High" ? "h-4 w-4 text-destructive" :
-                          report.disease_risk_level === "Moderate" ? "h-4 w-4 text-yellow-500" :
-                          "h-4 w-4 text-green-500"
-                        } />
-                        <AlertTitle className="text-sm font-semibold">
-                          🩺 Predicted Disease: {report.predicted_disease}
-                        </AlertTitle>
-                        <AlertDescription className="text-xs mt-1 space-y-1">
-                          <p className="font-medium">Risk Level: {report.disease_risk_level}</p>
-                          <p>{report.disease_advice}</p>
-                        </AlertDescription>
-                      </Alert>
-                    ) : (
-                      <Alert className="border-muted bg-muted/5">
-                        <CheckCircle2 className="h-4 w-4 text-success" />
-                        <AlertTitle className="text-sm font-semibold">
-                          No Health Issues Detected
-                        </AlertTitle>
-                        <AlertDescription className="text-xs mt-1">
-                          Continue maintaining good hygiene and water safety practices.
-                        </AlertDescription>
-                      </Alert>
-                    )}
-
-                    {/* Water Biology Analysis */}
-                    {biology.possible_organism && biology.health_advice && (
-                      <Alert className={
-                        biology.health_advice.includes("HIGH RISK") || biology.health_advice.includes("UNSAFE") ? "border-destructive bg-destructive/5" :
-                        biology.health_advice.includes("MODERATE RISK") || biology.health_advice.includes("CAUTION") ? "border-yellow-500 bg-yellow-500/5" :
-                        "border-blue-500 bg-blue-500/5"
-                      }>
-                        <Droplets className={
-                          biology.health_advice.includes("HIGH RISK") || biology.health_advice.includes("UNSAFE") ? "h-4 w-4 text-destructive" :
-                          biology.health_advice.includes("MODERATE RISK") || biology.health_advice.includes("CAUTION") ? "h-4 w-4 text-yellow-500" :
-                          "h-4 w-4 text-blue-500"
-                        } />
-                        <AlertTitle className="text-sm font-semibold">
-                          🔬 Water Biology Analysis
-                        </AlertTitle>
-                        <AlertDescription className="text-xs mt-1 space-y-1">
-                          <p className="font-medium">Possible Organism: {biology.possible_organism}</p>
-                          <p className="mt-1">{biology.health_advice}</p>
-                        </AlertDescription>
-                      </Alert>
-                    )}
-
-                    {report.symptoms && report.symptoms.length > 0 && (
-                      <div className="text-sm">
-                        <span className="text-muted-foreground font-medium">Symptoms: </span>
-                        <span className="text-foreground">{report.symptoms.join(", ")}</span>
-                        {report.people_affected && report.people_affected > 1 && (
-                          <span className="text-muted-foreground ml-2">({report.people_affected} people affected)</span>
+                    <div key={report.id} className="border rounded-lg p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold">{report.village_name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(report.report_date || report.created_at || new Date()).toLocaleDateString()}
+                          </p>
+                        </div>
+                        {report.disease_risk_level ? (
+                          <Badge
+                            variant="outline"
+                            className={`gap-1 ${(report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") ? "border-red-500 text-red-700 bg-red-50" :
+                              report.disease_risk_level === "Moderate" ? "border-blue-500 text-blue-700 bg-blue-50" :
+                                "border-green-500 text-green-700 bg-green-50"
+                              }`}
+                          >
+                            {(report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") && <AlertTriangle className="h-3 w-3 text-red-600" />}
+                            {report.disease_risk_level === "Moderate" && <Info className="h-3 w-3 text-blue-600" />}
+                            {(report.disease_risk_level === "Low" || report.disease_risk_level === "Safe") && <CheckCircle2 className="h-3 w-3 text-green-600" />}
+                            {report.disease_risk_level} Risk
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-success gap-1">
+                            <CheckCircle2 className="h-3 w-3" />
+                            No Symptoms Reported
+                          </Badge>
                         )}
                       </div>
-                    )}
 
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm pt-2">
-                      <div>
-                        <span className="text-muted-foreground">pH:</span> {report.water_ph}
+                      {report.predicted_disease ? (
+                        <Alert className={
+                          (report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") ? "border-red-500 bg-red-50" :
+                            report.disease_risk_level === "Moderate" ? "border-blue-500 bg-blue-50" :
+                              "border-green-500 bg-green-50"
+                        }>
+                          <AlertTriangle className={
+                            (report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") ? "h-4 w-4 text-red-600" :
+                              report.disease_risk_level === "Moderate" ? "h-4 w-4 text-blue-600" :
+                                "h-4 w-4 text-green-600"
+                          } />
+                          <AlertTitle className={`text-sm font-semibold ${(report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") ? "text-red-700" :
+                            report.disease_risk_level === "Moderate" ? "text-blue-700" :
+                              "text-green-700"
+                            }`}>
+                            🩺 Predicted Disease: {report.predicted_disease}
+                          </AlertTitle>
+                          <AlertDescription className="text-xs mt-1 space-y-1 text-foreground/80">
+                            <p className="font-medium">Risk Level: {report.disease_risk_level}</p>
+                            <p>{report.disease_advice}</p>
+                          </AlertDescription>
+                        </Alert>
+                      ) : (
+                        <Alert className="border-muted bg-muted/5">
+                          <CheckCircle2 className="h-4 w-4 text-success" />
+                          <AlertTitle className="text-sm font-semibold">
+                            No Health Issues Detected
+                          </AlertTitle>
+                          <AlertDescription className="text-xs mt-1">
+                            Continue maintaining good hygiene and water safety practices.
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {/* Water Biology Analysis */}
+                      {biology.possible_organism && biology.health_advice && (
+                        <Alert className={
+                          biology.health_advice.includes("contamination") || biology.health_advice.includes("HIGH RISK") || biology.health_advice.includes("UNSAFE") ? "border-red-500 bg-red-50" :
+                            biology.health_advice.includes("MODERATE RISK") || biology.health_advice.includes("CAUTION") ? "border-blue-500 bg-blue-50" :
+                              "border-green-500 bg-green-50"
+                        }>
+                          <Droplets className={
+                            biology.health_advice.includes("contamination") || biology.health_advice.includes("HIGH RISK") || biology.health_advice.includes("UNSAFE") ? "h-4 w-4 text-red-600" :
+                              biology.health_advice.includes("MODERATE RISK") || biology.health_advice.includes("CAUTION") ? "h-4 w-4 text-blue-600" :
+                                "h-4 w-4 text-green-600"
+                          } />
+                          <AlertTitle className={`text-sm font-semibold ${biology.health_advice.includes("contamination") || biology.health_advice.includes("HIGH RISK") || biology.health_advice.includes("UNSAFE") ? "text-red-700" :
+                            biology.health_advice.includes("MODERATE RISK") || biology.health_advice.includes("CAUTION") ? "text-blue-700" :
+                              "text-green-700"
+                            }`}>
+                            🔬 Water Biology Analysis
+                          </AlertTitle>
+                          <AlertDescription className="text-xs mt-1 space-y-1 text-foreground/80">
+                            <p className="font-medium">Possible Organism: {biology.possible_organism}</p>
+                            <p className="mt-1">{biology.health_advice}</p>
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {report.symptoms && report.symptoms.length > 0 && (
+                        <div className="text-sm">
+                          <span className="text-muted-foreground font-medium">Symptoms: </span>
+                          <span className="text-foreground">{report.symptoms.join(", ")}</span>
+                          {report.people_affected && report.people_affected > 1 && (
+                            <span className="text-muted-foreground ml-2">({report.people_affected} people affected)</span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm pt-2">
+                        <div>
+                          <span className="text-muted-foreground">pH:</span> {report.water_ph}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Turbidity:</span> {report.water_turbidity}
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Turbidity:</span> {report.water_turbidity}
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteReport(report.id)}
+                          className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded border hover:bg-muted transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Delete report
+                        </button>
                       </div>
                     </div>
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteReport(report.id)}
-                        className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded border hover:bg-muted transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete report
-                      </button>
-                    </div>
-                  </div>
                   );
                 })}
               </div>
@@ -1144,8 +1237,8 @@ const VillagerDashboard = () => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 };
 

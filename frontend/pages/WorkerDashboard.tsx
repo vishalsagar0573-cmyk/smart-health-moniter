@@ -108,14 +108,14 @@ const WorkerDashboard = () => {
             .select("full_name")
             .eq("id", report.user_id)
             .single();
-          
+
           return {
             ...report,
             submitter_name: profile?.full_name || "Unknown"
           };
         })
       );
-      
+
       setReports(enrichedReports);
       processChartData(enrichedReports);
       processTimelineData(enrichedReports);
@@ -192,14 +192,16 @@ const WorkerDashboard = () => {
 
   const processChartData = (data: HealthReport[]) => {
     const villageData = data.reduce((acc: any, report) => {
-      const total = report.fever_cases + report.diarrhea_cases + report.vomiting_cases;
-      if (!acc[report.village_name]) {
-        acc[report.village_name] = {
-          village: report.village_name,
+      const total = (report.fever_cases || 0) + (report.diarrhea_cases || 0) + (report.vomiting_cases || 0);
+      const village = report.village_name || "Unknown";
+
+      if (!acc[village]) {
+        acc[village] = {
+          village: village,
           totalCases: 0,
         };
       }
-      acc[report.village_name].totalCases += total;
+      acc[village].totalCases += total;
       return acc;
     }, {});
 
@@ -211,7 +213,7 @@ const WorkerDashboard = () => {
       .slice(0, 10)
       .reverse()
       .map(report => ({
-        date: new Date(report.report_date).toLocaleDateString(),
+        date: new Date(report.report_date || report.created_at || Date.now()).toLocaleDateString(),
         pH: report.water_ph,
         turbidity: report.water_turbidity,
       }));
@@ -219,9 +221,20 @@ const WorkerDashboard = () => {
   };
 
   const processRiskDistribution = (data: HealthReport[]) => {
-    const safe = data.filter(r => r.disease_risk_level === "Low" || (!r.disease_risk_level && r.alert_level === "safe")).length;
-    const moderate = data.filter(r => r.disease_risk_level === "Moderate" || (!r.disease_risk_level && r.alert_level === "moderate")).length;
-    const high = data.filter(r => r.disease_risk_level === "High" || (!r.disease_risk_level && r.alert_level === "high")).length;
+    const safe = data.filter(r =>
+      ["Low", "Safe"].includes(r.disease_risk_level || "") ||
+      (!r.disease_risk_level && r.alert_level === "safe")
+    ).length;
+
+    const moderate = data.filter(r =>
+      ["Moderate"].includes(r.disease_risk_level || "") ||
+      (!r.disease_risk_level && r.alert_level === "moderate")
+    ).length;
+
+    const high = data.filter(r =>
+      ["High", "Severe", "Critical"].includes(r.disease_risk_level || "") ||
+      (!r.disease_risk_level && r.alert_level === "high")
+    ).length;
 
     setRiskDistribution([
       { name: "Safe", value: safe, color: "hsl(var(--success))" },
@@ -270,10 +283,10 @@ const WorkerDashboard = () => {
         title: "Report deleted successfully",
         description: "The health report has been removed from the system.",
       });
-      
+
       // Refresh reports list
       await fetchReports();
-      
+
       setShowDeleteDialog(false);
       setDeleteReportId(null);
     } catch (err: any) {
@@ -305,7 +318,7 @@ const WorkerDashboard = () => {
     );
   }
 
-  const highRiskCount = reports.filter(r => r.disease_risk_level === "High" || (!r.disease_risk_level && r.alert_level === "high")).length;
+  const highRiskCount = reports.filter(r => ["High", "Severe", "Critical"].includes(r.disease_risk_level || "") || (!r.disease_risk_level && r.alert_level === "high")).length;
   const totalCases = reports.reduce((sum, r) => sum + r.fever_cases + r.diarrhea_cases + r.vomiting_cases, 0);
 
   return (
@@ -552,14 +565,14 @@ const WorkerDashboard = () => {
                     : { possible_organism: report.possible_organism, health_advice: report.health_advice };
                   const autoAdvice = getAutoAdvice(report.alert_level);
                   const villageAdvice = adviceMap[report.village_name];
-                  const riskColor = 
-                    report.disease_risk_level === "High" ? "destructive" : 
-                    report.disease_risk_level === "Moderate" ? "default" : 
-                    "secondary";
-                  
+                  const riskColor =
+                    report.disease_risk_level === "High" ? "destructive" :
+                      report.disease_risk_level === "Moderate" ? "default" :
+                        "secondary";
+
                   return (
-                    <Card 
-                      key={report.id} 
+                    <Card
+                      key={report.id}
                       className="border-l-4 border-l-primary/50 hover:border-l-primary shadow-md hover:shadow-lg transition-all duration-300 card-hover"
                     >
                       <CardContent className="p-5">
@@ -572,11 +585,16 @@ const WorkerDashboard = () => {
                                 <div className="flex items-center gap-2">
                                   <h3 className="text-lg font-bold text-primary">{report.village_name}</h3>
                                   {report.disease_risk_level && (
-                                    <Badge 
-                                      variant={riskColor as any}
-                                      className="gap-1"
+                                    <Badge
+                                      variant="outline"
+                                      className={`gap-1 ${(report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") ? "border-red-500 text-red-700 bg-red-50" :
+                                        report.disease_risk_level === "Moderate" ? "border-blue-500 text-blue-700 bg-blue-50" :
+                                          "border-green-500 text-green-700 bg-green-50"
+                                        }`}
                                     >
-                                      {report.disease_risk_level === "High" && <AlertTriangle className="h-3 w-3" />}
+                                      {(report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") && <AlertTriangle className="h-3 w-3 text-red-600" />}
+                                      {report.disease_risk_level === "Moderate" && <Activity className="h-3 w-3 text-blue-600" />}
+                                      {(report.disease_risk_level === "Low" || report.disease_risk_level === "Safe") && <TrendingUp className="h-3 w-3 text-green-600" />}
                                       {report.disease_risk_level} Risk
                                     </Badge>
                                   )}
@@ -618,15 +636,20 @@ const WorkerDashboard = () => {
 
                             {/* Disease Prediction */}
                             {report.predicted_disease && (
-                              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                              <div className={`p-3 rounded-lg border ${(report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") ? "bg-red-50 border-red-200" :
+                                report.disease_risk_level === "Moderate" ? "bg-blue-50 border-blue-200" :
+                                  "bg-green-50 border-green-200"
+                                }`}>
                                 <div className="flex items-start gap-2">
-                                  <AlertTriangle className={`h-5 w-5 mt-0.5 ${
-                                    report.disease_risk_level === "High" ? "text-destructive" :
-                                    report.disease_risk_level === "Moderate" ? "text-warning" :
-                                    "text-secondary"
-                                  }`} />
+                                  <AlertTriangle className={`h-5 w-5 mt-0.5 ${(report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") ? "text-red-600" :
+                                    report.disease_risk_level === "Moderate" ? "text-blue-600" :
+                                      "text-green-600"
+                                    }`} />
                                   <div className="flex-1">
-                                    <p className="font-semibold text-sm">Predicted Disease: {report.predicted_disease}</p>
+                                    <p className={`font-semibold text-sm ${(report.disease_risk_level === "High" || report.disease_risk_level === "Severe" || report.disease_risk_level === "Critical") ? "text-red-700" :
+                                      report.disease_risk_level === "Moderate" ? "text-blue-700" :
+                                        "text-green-700"
+                                      }`}>Predicted Disease: {report.predicted_disease}</p>
                                     {report.disease_advice && (
                                       <p className="text-xs text-muted-foreground mt-1">{report.disease_advice}</p>
                                     )}
@@ -645,12 +668,7 @@ const WorkerDashboard = () => {
                                 <p className="text-xs text-muted-foreground mb-1">Turbidity</p>
                                 <p className="text-lg font-bold text-primary">{report.water_turbidity} NTU</p>
                               </div>
-                              {biology.possible_organism && (
-                                <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
-                                  <p className="text-xs text-muted-foreground mb-1">Possible Organism</p>
-                                  <p className="text-sm font-semibold">{biology.possible_organism}</p>
-                                </div>
-                              )}
+
                               {biology.health_advice && (
                                 <div className="p-3 rounded-lg bg-muted/50 border">
                                   <p className="text-xs text-muted-foreground mb-1">Health Advice</p>
@@ -760,7 +778,7 @@ const WorkerDashboard = () => {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel 
+            <AlertDialogCancel
               onClick={() => {
                 setDeleteReportId(null);
                 setDeleting(false);
