@@ -87,32 +87,57 @@ def classify_water_ml(img):
     
     print(f"🔍 ML Predictions: {list(zip(top_labels, top_probs))}")
     
-    # Water-related keywords in ImageNet
+    # Water-related keywords in ImageNet (Expanded)
     water_keywords = [
         'water', 'bottle', 'cup', 'mug', 'beaker', 'jug', 'pitcher', 
         'bucket', 'basin', 'tub', 'fountain', 'liquid', 'glass', 
-        'lakeside', 'seashore', 'promontory', 'sandbar', 'breakwater'
+        'lakeside', 'seashore', 'promontory', 'sandbar', 'breakwater',
+        'vase', 'bowl', 'pot', 'jar', 'vial', 'flask', 'petri', 'dish'
+    ]
+
+    # Strict Blocklist: Only reject if we are sure it is one of these
+    block_keywords = [
+        'person', 'woman', 'man', 'boy', 'girl', 'face', 'human', 
+        'dog', 'cat', 'bird', 'animal', 'mammal', 'spider', 'snake',
+        't-shirt', 'jersey', 'maillot', 'shirt', 'clothing', 'tie',
+        'car', 'truck', 'vehicle', 'bicycle', 'motor'
     ]
     
-    # Check if any top prediction is water-related
-    is_water = False
-    confidence = 0.0
-    matched_label = ""
+    # Logic:
+    # 1. If matches water_keyword -> Water (High Conf)
+    # 2. If matches block_keyword -> Not Water (Hard Reject)
+    # 3. Else (Table, Wall, Pen, etc.) -> Assume Water (Benefit of Doubt)
     
+    is_water = True # Default to True (Benefit of Doubt)
+    confidence = 0.5 # Default confidence
+    matched_label = "Uncertain (Assumed Water)"
+    
+    top_label = top_labels[0].lower()
+    top_prob = float(top_probs[0])
+
+    # Check Top Prediction
+    if any(kw in top_label for kw in water_keywords):
+        is_water = True
+        confidence = top_prob
+        matched_label = top_labels[0]
+        
+    elif any(kw in top_label for kw in block_keywords):
+        # Only reject if fairly confident
+        if top_prob > 0.4:
+            is_water = False
+            confidence = top_prob
+            matched_label = top_labels[0]
+            
+    # Check deeper if top was uncertaion but high prob not water
+    # (Optional: keep simple)
+    
+    # If explicitly detected water in top 5, boost it
     for i, label in enumerate(top_labels):
         if any(kw in label.lower() for kw in water_keywords):
             is_water = True
             confidence = float(top_probs[i])
             matched_label = label
             break
-            
-    # If top prediction is very strong non-water (e.g. "person", "dog"), reject
-    if not is_water and top_probs[0] > 0.5:
-        return False, top_probs[0], f"Detected {top_labels[0]}"
-        
-    # If confidence is low but no strong non-water, we might fallback to CV
-    if is_water and confidence < 0.1: # Very weak signal
-        return False, confidence, f"Weak signal for {matched_label}"
 
     return is_water, confidence, matched_label
 
@@ -236,21 +261,23 @@ def analyze_water_advanced(img):
     print(f"🔍 Skin Tone Analysis: {skin_percent:.2f}% (Threshold: {'50.0' if is_water else '15.0'}%)")
     
     # Dynamic Threshold: Allow more "skin-like" colors (mud/rust) if we are sure it's a water container
-    skin_threshold = 50.0 if is_water else 15.0
+    # Increase thresholds significantly to avoid rejecting dirty water
+    skin_threshold = 60.0 if is_water else 35.0
     
+    # Only reject if VERY high skin tone amount (likely a close up face/hand)
     if skin_percent > skin_threshold:
         return {
             "is_water": False,
             "error": True,
-            "message": f"Analysis failed: Detected skin tones ({skin_percent:.1f}%). Please ensure only the water container is visible."
+            "message": f"Analysis failed: Too much skin tone detected ({skin_percent:.1f}%). Please ensure only water is visible."
         }
         
-    # If ML says NOT water with high confidence
-    if not is_water and confidence > 0.5:
+    # If ML says NOT water (Blocked Object)
+    if not is_water:
         return {
             "is_water": False,
             "error": True,
-            "message": f"Analysis failed: Image does not appear to be a water sample. (Detected: {label})"
+            "message": f"Analysis failed: Image appears to contain a {label}. Please upload water only."
         }
 
     # 2. Advanced CV Estimation (pH & Turbidity)
