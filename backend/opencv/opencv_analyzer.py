@@ -8,9 +8,19 @@ import numpy as np
 import requests
 from io import BytesIO
 from PIL import Image
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv() # Load environment variables from .env file
+
+# Configure Gemini
+GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GENAI_API_KEY:
+    genai.configure(api_key=GENAI_API_KEY)
+# else: User might rely on system env vars, handled in function check
 
 app = Flask(__name__)
 CORS(app)
@@ -62,14 +72,56 @@ def download_image(image_url):
     except Exception as e:
         return None
 
+# --- GEMINI VERIFICATION ---
+def verify_water_with_gemini(img_array):
+    """
+    Uses Google Gemini Vision to verify if the image contains water.
+    Returns: (is_valid: bool, reason: str)
+    """
+    if not GENAI_API_KEY:
+        print("⚠️ Gemini API Key not found. Falling back to strict OpenCV/ML.")
+        return None, "ML Setup Missing"
+
+    try:
+        # Convert numpy/opencv image to PIL
+        # img_array is BGR from cv2
+        img_rgb = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(img_rgb)
+
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        prompt = (
+            "Analyze this image strictly. Is this likely a photo of a water sample (in a glass, bottle, cup, or container) "
+            "intended for quality testing? "
+            "If it is a diagram, document, screenshot, specific object (like an ID card, phone, laptop), person, or non-water item, answer NO. "
+            "If it is water, answer YES. "
+            "Return ONLY 'YES' or 'NO'."
+        )
+        
+        response = model.generate_content([prompt, pil_image])
+        answer = response.text.strip().upper()
+        
+        print(f"🤖 Gemini Verification: {answer}")
+        
+        if "YES" in answer:
+            return True, "Verified by Gemini"
+        else:
+            return False, "Gemini rejected image"
+            
+    except Exception as e:
+        print(f"❌ Gemini Error: {e}")
+        return None, str(e)
+
 # --- 1. ML-BASED CLASSIFIER ---
 def classify_water_ml(img):
     """
     Classify if image contains water using MobileNetV2 (ImageNet).
     Returns (is_water, confidence, label)
+    STRICT MODE: Rejects everything unless explicitly recognized as water-like.
     """
     if net is None or not classes:
-        return True, 1.0, "ML Disabled" # Fallback if model missing
+        # If ML is down, we fall back to heuristics, but default to suspicious
+        return False, 0.0, "ML Disabled" 
 
     # Preprocess for MobileNet
     blob = cv2.dnn.blobFromImage(img, 1.0/225, (224, 224), (0.485, 0.456, 0.406), swapRB=True, crop=False)
@@ -77,7 +129,6 @@ def classify_water_ml(img):
     preds = net.forward()
     
     # Get top predictions
-    # Softmax
     preds = preds.flatten()
     probs = np.exp(preds) / np.sum(np.exp(preds))
     
@@ -87,57 +138,70 @@ def classify_water_ml(img):
     
     print(f"🔍 ML Predictions: {list(zip(top_labels, top_probs))}")
     
-    # Water-related keywords in ImageNet (Expanded)
+    # Water-related keywords in ImageNet (Strict)
     water_keywords = [
         'water', 'bottle', 'cup', 'mug', 'beaker', 'jug', 'pitcher', 
         'bucket', 'basin', 'tub', 'fountain', 'liquid', 'glass', 
         'lakeside', 'seashore', 'promontory', 'sandbar', 'breakwater',
-        'vase', 'bowl', 'pot', 'jar', 'vial', 'flask', 'petri', 'dish'
+        'vase', 'bowl', 'pot', 'jar', 'vial', 'flask', 'petri', 'dish',
+        'beer_glass', 'goblet', 'soup_bowl', 'washbasin'
     ]
 
-    # Strict Blocklist: Only reject if we are sure it is one of these
+    # Explicit Blocklist (Common confusion items)
     block_keywords = [
         'person', 'woman', 'man', 'boy', 'girl', 'face', 'human', 
         'dog', 'cat', 'bird', 'animal', 'mammal', 'spider', 'snake',
         't-shirt', 'jersey', 'maillot', 'shirt', 'clothing', 'tie',
-        'car', 'truck', 'vehicle', 'bicycle', 'motor'
+        'car', 'truck', 'vehicle', 'bicycle', 'motor',
+        'envelope', 'web_site', 'monitor', 'screen', 'television', 'display',
+        'paper', 'notebook', 'binder', 'rule', 'modem', 'projector',
+        'packet', 'carton', 'switch', 'keyboard', 'cellular', 'mobile',
+        'wallet', 'purse', 'card', 'identity', 'passport'
     ]
     
-    # Logic:
-    # 1. If matches water_keyword -> Water (High Conf)
-    # 2. If matches block_keyword -> Not Water (Hard Reject)
-    # 3. Else (Table, Wall, Pen, etc.) -> Assume Water (Benefit of Doubt)
+    # --- STRICT LOGIC (Balanced) ---
+    # Default: Assume NOT WATER to be strict
+    is_water = False 
+    confidence = 0.0
+    matched_label = top_labels[0]
     
-    is_water = True # Default to True (Benefit of Doubt)
-    confidence = 0.5 # Default confidence
-    matched_label = "Uncertain (Assumed Water)"
-    
-    top_label = top_labels[0].lower()
-    top_prob = float(top_probs[0])
+    # 1. Check if explicitly in Water List (Boost confidence)
+    top_name = top_labels[0].lower()
+    top_score = float(top_probs[0])
 
-    # Check Top Prediction
-    if any(kw in top_label for kw in water_keywords):
+    if any(kw in top_name for kw in water_keywords):
         is_water = True
-        confidence = top_prob
+        confidence = max(0.8, top_score)
         matched_label = top_labels[0]
         
-    elif any(kw in top_label for kw in block_keywords):
-        # Only reject if fairly confident
-        if top_prob > 0.4:
+    # 2. Check if explicitly in Block List (Strict Reject)
+    elif any(kw in top_name for kw in block_keywords):
+        # Reject if even moderately confident it's a blocked item
+        if top_score > 0.15: # Low threshold for safety
             is_water = False
-            confidence = top_prob
+            confidence = top_score
             matched_label = top_labels[0]
-            
-    # Check deeper if top was uncertaion but high prob not water
-    # (Optional: keep simple)
+            print(f"🛑 Blocked Object Detected: {matched_label}")
+
+    # 3. Diagram/Document Detection (Heuristic)
+    # If it's a diagram, it usually has high white content and sharp edges (text)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, 230, 255, cv2.THRESH_BINARY)
+    white_pixel_ratio = cv2.countNonZero(binary) / (gray.shape[0] * gray.shape[1])
     
-    # If explicitly detected water in top 5, boost it
-    for i, label in enumerate(top_labels):
-        if any(kw in label.lower() for kw in water_keywords):
-            is_water = True
-            confidence = float(top_probs[i])
-            matched_label = label
-            break
+    if white_pixel_ratio > 0.6: # >60% pure white background
+        # Check for edges (text)
+        edges = cv2.Canny(gray, 50, 150)
+        edge_density = np.sum(edges > 0) / (gray.shape[0] * gray.shape[1])
+        
+        # High white background + Moderate complexity usually means document/diagram
+        if edge_density > 0.015: 
+            print(f"🛑 Detected Document/Diagram: White ratio {white_pixel_ratio:.2f}, Edge Density {edge_density:.4f}")
+            is_water = False
+            matched_label = "Document/Diagram"
+
+    if not is_water:
+        print(f"❌ Rejected: Identified as '{matched_label}' or Diagram.")
 
     return is_water, confidence, matched_label
 
@@ -244,12 +308,44 @@ def estimate_ph_advanced(img):
 
 def analyze_water_advanced(img):
     """
-    Master Pipeline V4 (Advanced ML + CV)
+    Master Pipeline V4 (Advanced ML + CV + Gemini)
     Meets strict requirements for Water Verification, pH, and Turbidity.
     """
-    # 1. ML Classification (Water vs Non-Water)
-    is_water, confidence, label = classify_water_ml(img)
+    # 0. Gemini Verification (Primary & Strictest)
+    is_gemini_valid, gemini_reason = verify_water_with_gemini(img)
     
+    # Initialize variables to prevent scope errors
+    label = "Unknown Object"
+    
+    print(f"DEBUG: Gemini Valid: {is_gemini_valid}")
+    
+    if is_gemini_valid is False:
+        # Gemini explicitly said NO
+        return {
+            "is_water": False,
+            "error": True,
+            "message": "Analysis failed: Incorrect water sample. Please upload a valid photo of water."
+        }
+    
+    is_water = False
+    confidence = 0.0
+    
+    # 1. Fallback / Secondary ML Classification
+    # If Gemini passed (True) or was unavailable (None), run local ML
+    ml_is_water, ml_conf, ml_label = classify_water_ml(img)
+    
+    if is_gemini_valid is True:
+        # If Gemini trusted it, we trust it, but use ML to confirm if possible
+        is_water = True
+        confidence = 1.0 # High confidence from Gemini
+        label = "Verified Water Sample"
+        print("✅ Trusted by Gemini - Skipping Strict Blocklist")
+    else:
+        # Gemini was unavailable, rely purely on Strict ML
+        is_water = ml_is_water
+        confidence = ml_conf
+        label = ml_label
+        
     # Heuristic Fallback: Skin Tone Analysis (Selfie Rejection)
     # Relaxed for dirty water if ML detects a container
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -260,12 +356,30 @@ def analyze_water_advanced(img):
     
     print(f"🔍 Skin Tone Analysis: {skin_percent:.2f}% (Threshold: {'50.0' if is_water else '15.0'}%)")
     
+    # Face Detection Check (More reliable than skin tone)
+    # Face Detection Check (Strict)
+    # We BLOCK if a face is detected, unless Gemini EXPLICITLY whitelisted it (rare).
+    if face_cascade is not None:
+        gray_frame = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray_frame, 1.1, 8) 
+        if len(faces) > 0:
+            print(f"⚠️ Face detected (Count: {len(faces)}).")
+            
+            # If Gemini didn't explicitly say YES, we reject faces.
+            if is_gemini_valid is not True:
+                return {
+                    "is_water": False,
+                    "error": True,
+                    "message": "Analysis failed: Face detected in image. Please photograph only the water sample."
+                }
+
     # Dynamic Threshold: Allow more "skin-like" colors (mud/rust) if we are sure it's a water container
     # Increase thresholds significantly to avoid rejecting dirty water
-    skin_threshold = 60.0 if is_water else 35.0
+    skin_threshold = 85.0 if is_water else 50.0
     
     # Only reject if VERY high skin tone amount (likely a close up face/hand)
-    if skin_percent > skin_threshold:
+    # Again, trust Gemini if it said YES
+    if is_gemini_valid is not True and skin_percent > skin_threshold:
         return {
             "is_water": False,
             "error": True,
@@ -391,7 +505,7 @@ def health():
     return jsonify({'status': 'healthy', 'version': '4.0-advanced-ml', 'ml_engine': ml_status}), 200
 
 if __name__ == '__main__':
-    print("Starting Advanced Water Analysis Service v3.0 (ML + CV)...")
+    print("🚀 Starting STRICT Water Analysis Service v5.0 (Strict Blocklist)...")
     app.run(host='0.0.0.0', port=8000, debug=False)
 
 

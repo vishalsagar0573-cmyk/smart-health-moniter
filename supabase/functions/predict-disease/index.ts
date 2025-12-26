@@ -637,22 +637,80 @@ function predictDisease(model: TrainedModel, symptoms: string[], peopleAffected:
 }
 
 // Determine risk level based on multiple factors
+// Determine risk level based on Hybrid Logic (Strict + General)
 function determineRiskLevel(
   symptoms: string[],
   peopleAffected: number,
   waterQuality: any,
   baseRiskLevel: string
 ): string {
-  // Critical symptoms
+  const s = new Set(symptoms.map(sym => sym.toLowerCase().replace("other: ", "").trim()));
+  const symptomCount = symptoms.length;
+
+  // --- STEP 1: Strict Rules (Highest Priority) ---
+
+  // 🔴 High Risk Strict Rules
+  // 1. severe diarrhea + dehydration + vomiting AND affected >= 20
+  if (s.has("diarrhea") && s.has("dehydration") && s.has("vomiting") && peopleAffected >= 20) {
+    return "High";
+  }
+  // 2. high fever + stomach pain + continuous vomiting AND affected >= 20
+  if (s.has("fever") && s.has("stomach_pain") && s.has("vomiting") && peopleAffected >= 20) {
+    return "High";
+  }
+  // 3. bloody diarrhea (blood_stool) + fever AND affected >= 15
+  if (s.has("blood_stool") && s.has("fever") && peopleAffected >= 15) {
+    return "High";
+  }
+
+  // 🟡 Moderate Risk Strict Rules
+  // 1. diarrhea OR vomiting OR stomach pain (any of these) AND total symptoms 4 or 5 AND affected 10-19
+  const hasGI = s.has("diarrhea") || s.has("vomiting") || s.has("stomach_pain");
+  if (hasGI && (symptomCount === 4 || symptomCount === 5) && (peopleAffected >= 10 && peopleAffected <= 19)) {
+    return "Moderate";
+  }
+  // 2. fever AND weakness AND affected 10-19
+  if (s.has("fever") && s.has("weakness") && (peopleAffected >= 10 && peopleAffected <= 19)) {
+    return "Moderate";
+  }
+
+  // 🟢 Low Risk Strict Rules
+  // mild symptoms only AND total symptoms <= 3 AND affected < 10
+  // Mild symptoms def: headache, nausea, stomach_pain (mild discomfort)
+  // We check if ONLY mild symptoms are present effectively by checking if no severe ones are there? 
+  // Or just following the user rule: "IF mild symptoms only... AND count <= 3 AND affected < 10"
+  // Implementing as: If count <= 3 and affected < 10, it's Low (matches User's broad rule).
+
+
+  // --- STEP 2: General Risk Logic (Fallback if no strict rule matched) ---
+
+  // High Risk: Symptoms >= 6 AND Affected people >= 20
+  if (symptomCount >= 6 && peopleAffected >= 20) {
+    return "High";
+  }
+
+  // Moderate Risk: Symptoms 4 or 5 AND Affected people between 15 and 19
+  if ((symptomCount === 4 || symptomCount === 5) && (peopleAffected >= 15 && peopleAffected <= 19)) {
+    return "Moderate";
+  }
+
+  // Low Risk: Symptoms <= 3 AND Affected people < 10
+  if (symptomCount <= 3 && peopleAffected < 10) {
+    return "Low";
+  }
+
+  // --- STEP 3: Fallback / Legacy Logic for Uncovered Cases ---
+  // e.g. Symptoms = 5 and People = 5 (Doesn't fit Low (<10 people? yes, but symptoms <=3? No), doesn't fit Moderate (people >=15))
+
+  // Critical symptoms check
   const criticalSymptoms = ['blood_stool', 'jaundice', 'dehydration'];
-  const hasCriticalSymptom = symptoms.some(s => criticalSymptoms.includes(s));
+  const hasCriticalSymptom = symptoms.some(sym => criticalSymptoms.includes(sym));
 
   // Severe symptoms
   const severeSymptoms = ['fever', 'vomiting', 'diarrhea', 'dark_urine'];
-  const severeCount = symptoms.filter(s => severeSymptoms.includes(s)).length;
+  const severeCount = symptoms.filter(sym => severeSymptoms.includes(sym)).length;
 
-  // Many people affected
-  const manyPeopleAffected = peopleAffected > 3;
+  const manyPeopleAffected = peopleAffected > 5; // Adjusted baseline
 
   // Poor water quality
   const poorWaterQuality = waterQuality && (
@@ -660,12 +718,11 @@ function determineRiskLevel(
     waterQuality.turbidity > 5
   );
 
-  // Determine final risk level
   if (hasCriticalSymptom || (severeCount >= 3 && manyPeopleAffected)) {
     return "High";
   } else if (severeCount >= 3 || manyPeopleAffected || poorWaterQuality) {
-    return "High";
-  } else if (symptoms.length >= 2 || peopleAffected > 1) {
+    return "Moderate"; // Downgraded default from High to Moderate if strict rules didn't catch it
+  } else if (symptoms.length >= 2 || peopleAffected > 3) {
     return "Moderate";
   } else {
     return "Low";

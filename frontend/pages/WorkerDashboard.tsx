@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  LogOut, Activity, Search, Printer, Trash2, MessageSquarePlus,
-  BarChart3, AlertTriangle, Droplets, Loader2
+  LogOut, Activity, Search, Printer, MessageSquarePlus,
+  BarChart3, AlertTriangle, Droplets, Loader2, MapPin, Tent
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -49,6 +49,7 @@ interface HealthReport {
   disease_risk_level?: string;
   disease_advice?: string;
   possible_organism?: string;
+  medical_camp_arranged?: boolean;
   health_advice?: string;
   created_at?: string;
   profiles?: { full_name: string } | null;
@@ -193,20 +194,16 @@ const WorkerDashboard = () => {
     navigate("/auth");
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this report?")) return;
 
-    const { error } = await supabase.from("health_reports").delete().eq("id", id);
-    if (error) {
-      toast({ title: "Error", description: "Failed to delete report" });
-    } else {
-      toast({ title: "Report Deleted", description: "The health report has been removed." });
-      fetchReports(); // Refresh list
-    }
-  };
 
-  const handlePrint = () => {
-    window.print();
+  const [printingReportId, setPrintingReportId] = useState<string | null>(null);
+
+  const handlePrint = (reportId: string) => {
+    setPrintingReportId(reportId);
+    setTimeout(() => {
+      window.print();
+      setPrintingReportId(null);
+    }, 100);
   };
 
   const openAdviceDialog = (reportId: string, currentAdvice: string = "") => {
@@ -240,6 +237,25 @@ const WorkerDashboard = () => {
     }
   };
 
+  const arrangeMedicalCamp = async (reportId: string) => {
+    const { error } = await supabase
+      .from("health_reports")
+      .update({ alert_message: "MEDICAL_CAMP_ARRANGED" })
+      .eq("id", reportId);
+
+    if (error) {
+      console.error("Error arranging medical camp:", error);
+      toast({ title: "Error", description: "Failed to arrange medical camp", variant: "destructive" });
+    } else {
+      toast({
+        title: "Medical Camp Arranged",
+        description: "Action recorded. Villagers will be notified.",
+        className: "bg-green-50 border-green-200 text-green-800"
+      });
+      fetchReports();
+    }
+  };
+
   const filteredReports = reports.filter(r =>
     r.village_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -251,17 +267,24 @@ const WorkerDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 font-sans">
-      <header className="bg-white border-b sticky top-0 z-30 shadow-sm print:hidden">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Activity className="h-6 w-6 text-blue-600" />
-            <h1 className="text-xl font-bold text-slate-800">Health Worker Dashboard</h1>
-            <Badge variant="outline" className="ml-2 bg-blue-50 text-blue-700 border-blue-200">
+    <div className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-indigo-100 pb-20 font-sans text-slate-900">
+      <header className="bg-white/80 backdrop-blur-md border-b border-indigo-100 sticky top-0 z-30 shadow-sm transition-all duration-300 print:hidden">
+        <div className="container mx-auto px-4 h-24 flex items-center justify-between">
+          <h1 className="text-xl md:text-3xl font-serif font-normal text-slate-800 flex items-center gap-3 tracking-wide">
+            <div className="p-2 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-300">
+              <Activity className="h-7 w-7" />
+            </div>
+            Health Worker Dashboard
+          </h1>
+          <div className="flex items-center gap-4">
+            <span className="text-lg font-bold text-slate-700 hidden sm:inline-flex items-center gap-3 bg-white px-6 py-3 rounded-full border border-slate-200 shadow-sm h-14">
+              <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse shadow-green-500/50 shadow-sm"></div>
               {doctorName}
-            </Badge>
+            </span>
+            <Button variant="ghost" size="lg" onClick={handleLogout} className="text-slate-600 hover:text-white hover:bg-red-500 font-bold transition-all rounded-xl px-8 h-14 text-lg border-2 border-slate-100 hover:border-red-500">
+              Logout
+            </Button>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleLogout}>Logout</Button>
         </div>
       </header>
 
@@ -309,22 +332,22 @@ const WorkerDashboard = () => {
           {/* Water Quality Timeline */}
           <Card className="bg-white border-slate-200 shadow-sm col-span-1 lg:col-span-2">
             <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-bold text-slate-800">Water Quality Timeline</CardTitle>
-              <p className="text-sm text-slate-500">pH and Turbidity levels over time</p>
+              <CardTitle className="text-xl font-bold text-slate-800">Water Quality Timeline</CardTitle>
+              <p className="text-base text-slate-500">pH and Turbidity levels over time</p>
             </CardHeader>
             <CardContent>
-              <div className="h-[250px] w-full">
+              <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={timelineData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="date" fontSize={12} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} />
-                    <YAxis fontSize={12} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} />
+                    <XAxis dataKey="date" fontSize={14} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} />
+                    <YAxis fontSize={14} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} />
                     <Tooltip
                       contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
                     />
-                    <Legend wrapperStyle={{ paddingTop: '10px' }} />
-                    <Line type="monotone" dataKey="ph" name="pH Level" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 5 }} />
-                    <Line type="monotone" dataKey="turbidity" name="Turbidity (NTU)" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 5 }} />
+                    <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '14px' }} />
+                    <Line type="monotone" dataKey="ph" name="pH Level" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: '#3b82f6', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="turbidity" name="Turbidity (NTU)" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -334,19 +357,19 @@ const WorkerDashboard = () => {
           {/* Risk Distribution */}
           <Card className="bg-white border-slate-200 shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-bold text-slate-800">Risk Distribution</CardTitle>
-              <p className="text-sm text-slate-500">Percentage of villages by risk level</p>
+              <CardTitle className="text-xl font-bold text-slate-800">Risk Distribution</CardTitle>
+              <p className="text-base text-slate-500">Percentage of villages by risk level</p>
             </CardHeader>
             <CardContent>
-              <div className="h-[250px] w-full flex items-center justify-center">
+              <div className="h-[400px] w-full flex items-center justify-center">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={riskData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
+                      innerRadius={80}
+                      outerRadius={120}
                       paddingAngle={5}
                       dataKey="value"
                     >
@@ -355,7 +378,7 @@ const WorkerDashboard = () => {
                       ))}
                     </Pie>
                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} />
-                    <Legend layout="vertical" verticalAlign="middle" align="right" />
+                    <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: '14px' }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -365,21 +388,21 @@ const WorkerDashboard = () => {
           {/* New Radar Chart: Sustainability Score */}
           <Card className="bg-white border-slate-200 shadow-sm">
             <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-bold text-slate-800">Health Impact Score</CardTitle>
-              <p className="text-sm text-slate-500">Overall performance metrics</p>
+              <CardTitle className="text-xl font-bold text-slate-800">Health Impact Score</CardTitle>
+              <p className="text-base text-slate-500">Overall performance metrics</p>
             </CardHeader>
             <CardContent>
-              <div className="h-[250px] w-full flex items-center justify-center">
+              <div className="h-[400px] w-full flex items-center justify-center">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius="70%" data={sustainabilityData}>
+                  <RadarChart cx="50%" cy="50%" outerRadius="75%" data={sustainabilityData}>
                     <PolarGrid stroke="#e2e8f0" />
-                    <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 600 }} />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 13, fontWeight: 600 }} />
                     <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
                     <Radar
                       name="Score"
                       dataKey="A"
                       stroke="#8b5cf6"
-                      strokeWidth={2}
+                      strokeWidth={3}
                       fill="#8b5cf6"
                       fillOpacity={0.4}
                     />
@@ -393,11 +416,11 @@ const WorkerDashboard = () => {
           {/* Cases by Village */}
           <Card className="bg-white border-slate-200 shadow-sm col-span-1 lg:col-span-2">
             <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-bold text-slate-800">Top Affected Locations</CardTitle>
-              <p className="text-sm text-slate-500">Locations with highest reported cases (Top 10)</p>
+              <CardTitle className="text-xl font-bold text-slate-800">Top Affected Locations</CardTitle>
+              <p className="text-base text-slate-500">Locations with highest reported cases (Top 10)</p>
             </CardHeader>
             <CardContent>
-              <div className="h-[320px] w-full pb-4">
+              <div className="h-[450px] w-full pb-4">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={villageCases.sort((a, b) => b.count - a.count).slice(0, 10)} margin={{ bottom: 30, top: 10 }}>
                     <defs>
@@ -409,7 +432,7 @@ const WorkerDashboard = () => {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis
                       dataKey="name"
-                      fontSize={11}
+                      fontSize={13}
                       tickLine={false}
                       axisLine={false}
                       tick={{ fill: '#64748b', fontWeight: 500 }}
@@ -418,12 +441,12 @@ const WorkerDashboard = () => {
                       // textAnchor="end"
                       height={50}
                     />
-                    <YAxis fontSize={12} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} />
+                    <YAxis fontSize={14} tickLine={false} axisLine={false} tick={{ fill: '#64748b' }} />
                     <Tooltip
                       cursor={{ fill: 'rgba(59, 130, 246, 0.05)' }}
                       contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)', padding: '12px' }}
                     />
-                    <Bar dataKey="count" name="Total Cases" fill="url(#colorCount)" radius={[6, 6, 0, 0]} barSize={40} />
+                    <Bar dataKey="count" name="Total Cases" fill="url(#colorCount)" radius={[6, 6, 0, 0]} barSize={50} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -448,109 +471,211 @@ const WorkerDashboard = () => {
           </div>
         </div>
 
-        <div className="space-y-4">
-          {filteredReports.map((report) => (
-            <Card key={report.id} className="bg-white border-slate-200 shadow-sm overflow-hidden break-inside-avoid print:shadow-none print:border">
-              <div className="p-6">
-                <div className="flex flex-col md:flex-row gap-6">
+        <div className="space-y-6">
+          {filteredReports.map((report) => {
+            const riskLevel = (report.disease_risk_level || report.alert_level || "Safe").toLowerCase();
+            const isHigh = riskLevel.includes("high") || riskLevel.includes("severe");
+            const isModerate = riskLevel.includes("moderate");
 
-                  {/* Left Column: Village Info */}
-                  <div className="w-full md:w-1/4 space-y-2">
-                    <h3 className="font-bold text-xl text-slate-800">{report.village_name}</h3>
-                    <div className="text-sm text-slate-500 flex items-center gap-1">
-                      📅 {new Date(report.created_at || Date.now()).toLocaleDateString()}
+            return (
+              <Card key={report.id} className={`
+                border-0 shadow-lg backdrop-blur-md overflow-hidden relative group transition-all duration-300 hover:-translate-y-1 hover:shadow-xl
+                ${isHigh
+                  ? "bg-gradient-to-br from-white via-red-50/30 to-red-50/80 ring-1 ring-red-100/50"
+                  : isModerate
+                    ? "bg-gradient-to-br from-white via-orange-50/30 to-orange-50/80 ring-1 ring-orange-100/50"
+                    : "bg-gradient-to-br from-white via-emerald-50/30 to-emerald-50/80 ring-1 ring-emerald-100/50"}
+                ${printingReportId && printingReportId === report.id ? 'print:block print:absolute print:top-0 print:left-0 print:w-full print:min-h-screen print:z-[100] print:m-0 print:bg-white' : ''}
+                ${printingReportId && printingReportId !== report.id ? 'print:hidden' : ''}
+              `}>
+
+                {/* Colored Side Bar Accent */}
+                <div className={`absolute left-0 top-0 bottom-0 w-1.5 
+                ${isHigh ? "bg-red-500" : isModerate ? "bg-orange-500" : "bg-emerald-500"}`}
+                />
+
+                <div className="p-6 pl-8">
+                  <div className="flex flex-col xl:flex-row gap-6">
+
+                    {/* Left Column: Village Info & Submitter */}
+                    <div className="w-full xl:w-1/4 space-y-4">
+                      <div>
+                        <h3 className="text-2xl font-bold text-slate-800 tracking-tight leading-none mb-1">{report.village_name}</h3>
+                        <p className="text-sm font-medium text-slate-500 flex items-center gap-2">
+                          Let's keep track of {report.village_name}
+                        </p>
+                        {report.latitude && report.longitude && (
+                          <div className="mt-2">
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${report.latitude},${report.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 text-xs font-bold rounded-lg border border-green-200 hover:bg-green-100 transition-colors"
+                            >
+                              <MapPin className="h-3.5 w-3.5" />
+                              View Live Location
+                            </a>
+                            <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                              {report.latitude.toFixed(5)}, {report.longitude.toFixed(5)}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-white/50 shadow-sm">
+                        <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-lg">
+                          {(report.profiles?.full_name || report.submitter_name || "U")[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Reported By</p>
+                          <p className="font-semibold text-slate-700 text-sm">{report.profiles?.full_name || report.submitter_name || "Unknown User"}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <div className="flex justify-between text-xs text-slate-500">
+                          <span>Date</span>
+                          <span className="font-mono">{new Date(report.created_at || Date.now()).toLocaleDateString()}</span>
+                        </div>
+                        <Badge variant="outline" className={`
+                                  py-1.5 justify-center font-bold tracking-wide rounded-lg
+                                  ${isHigh ? "bg-red-100 text-red-700 border-red-200" : isModerate ? "bg-orange-100 text-orange-700 border-orange-200" : "bg-emerald-100 text-emerald-700 border-emerald-200"}
+                               `}>
+                          {report.disease_risk_level || report.alert_level || "Safe Condition"}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="text-sm text-slate-500 flex items-center gap-1">
-                      👤 {report.profiles?.full_name || report.submitter_name || "Unknown"}
+
+                    {/* Middle Column: Detailed Health & Water Metrics */}
+                    <div className="w-full xl:w-2/4 xl:border-l xl:border-r border-slate-200/60 xl:px-8 space-y-5">
+
+                      {/* Disease Prediction Section */}
+                      <div className="bg-white/50 rounded-xl p-4 border border-white/60 shadow-sm">
+                        <div className="flex items-start justify-between mb-2">
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                            <Activity className="h-3 w-3" /> Disease Prediction
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="text-xl font-bold text-slate-800">{report.predicted_disease || "Analysis Pending"}</p>
+                        </div>
+                      </div>
+
+                      {/* Symptoms */}
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Reported Symptoms ({report.people_affected || 1} cases)</p>
+                        <div className="flex flex-wrap gap-2">
+                          {report.symptoms && report.symptoms.length > 0 ? report.symptoms.map(s => (
+                            <span key={s} className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold border border-indigo-100 shadow-sm">
+                              {s.replace(/_/g, " ")}
+                            </span>
+                          )) : <span className="text-sm text-slate-400 italic">No specific symptoms recorded</span>}
+                        </div>
+                      </div>
+
+                      {/* Water Quality Grid */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 flex flex-col items-center justify-center text-center group-hover:bg-blue-50 transition-colors">
+                          <div className="text-xs text-blue-400 font-bold uppercase mb-1">pH Level</div>
+                          <div className="text-3xl font-black text-blue-600 tracking-tight">{report.water_ph}</div>
+                          <div className={`h-1 w-12 rounded-full mt-2 ${report.water_ph >= 6.5 && report.water_ph <= 8.5 ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                          <span className={`text-xs font-bold mt-1 ${report.water_ph >= 6.5 && report.water_ph <= 8.5 ? 'text-green-600' : 'text-red-500'}`}>
+                            {report.water_ph >= 6.5 && report.water_ph <= 8.5 ? 'Safe' : (report.water_ph < 6.5 ? 'Acidic' : 'Alkaline')}
+                          </span>
+                        </div>
+                        <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex flex-col items-center justify-center text-center group-hover:bg-emerald-50 transition-colors">
+                          <div className="text-xs text-emerald-500 font-bold uppercase mb-1">Turbidity</div>
+                          <div className="text-3xl font-black text-emerald-600 tracking-tight flex items-end gap-1">
+                            {report.water_turbidity}
+                            <span className="text-sm font-bold text-emerald-400 mb-1">NTU</span>
+                          </div>
+                          <div className={`h-1 w-12 rounded-full mt-2 ${report.water_turbidity < 5 ? 'bg-green-400' : 'bg-orange-400'}`}></div>
+                          <span className={`text-xs font-bold mt-1 ${report.water_turbidity < 5 ? 'text-green-600' : 'text-orange-500'}`}>
+                            {report.water_turbidity < 1 ? 'Clear' : (report.water_turbidity < 5 ? 'Moderate' : 'High')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Possible Organism Warning */}
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50/50 border border-red-100">
+                        <div className="p-1.5 bg-red-100 rounded-full text-red-600">
+                          <AlertTriangle className="h-4 w-4" />
+                        </div>
+                        <div className="text-sm">
+                          <span className="block text-xs font-bold text-red-400 uppercase">Microbial Risk</span>
+                          <span className="font-semibold text-red-700">{report.possible_organism || "Low Risk / None Detected"}</span>
+                        </div>
+                      </div>
+
                     </div>
-                    <div className="pt-2">
-                      <Badge variant="outline" className={`
-                                 px-3 py-1 font-semibold rounded-full
-                                 ${(report.disease_risk_level || "").includes("High") ? "bg-red-50 text-red-600 border-red-200" : "bg-blue-50 text-blue-600 border-blue-200"}
-                              `}>
-                        {report.disease_risk_level || report.alert_level || "Moderate Risk"}
-                      </Badge>
+
+                    {/* Right Column: Advice & Actions */}
+                    <div className="w-full xl:w-1/4 flex flex-col gap-4">
+                      <div className="flex-1 space-y-3">
+                        {/* Display Worker Advice */}
+                        {report.health_advice ? (
+                          <div className="bg-amber-100/50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900 shadow-sm relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-2 opacity-10">
+                              <MessageSquarePlus className="h-16 w-16" />
+                            </div>
+                            <p className="text-xs font-bold text-amber-600 uppercase mb-2">Sent Advice</p>
+                            <p className="relative z-10 font-medium leading-relaxed">"{report.health_advice}"</p>
+                          </div>
+                        ) : (
+                          <div className="h-full min-h-[100px] flex items-center justify-center border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 text-slate-400 text-sm">
+                            No advice sent yet
+                          </div>
+                        )}
+
+                        {/* AI Advice Summary */}
+                        {!report.health_advice && report.disease_advice && (
+                          <div className="text-xs text-slate-500 bg-white/50 p-3 rounded-lg border border-slate-100">
+                            <span className="font-bold text-slate-600">AI Suggestion:</span> {report.disease_advice.substring(0, 100)}...
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-3 pt-2 print:hidden">
+                        <Button
+                          onClick={() => openAdviceDialog(report.id, report.health_advice)}
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/30 rounded-xl py-6 font-bold tracking-wide transition-all active:scale-95"
+                        >
+                          <MessageSquarePlus className="h-5 w-5 mr-2" /> {report.health_advice ? "Update Advice" : "Send Advice"}
+                        </Button>
+
+
+                        <Button
+                          onClick={() => arrangeMedicalCamp(report.id)}
+                          disabled={report.alert_message === "MEDICAL_CAMP_ARRANGED" || report.medical_camp_arranged}
+                          className={`w-full py-6 font-bold tracking-wide transition-all active:scale-95 shadow-lg
+                            ${(report.alert_message === "MEDICAL_CAMP_ARRANGED" || report.medical_camp_arranged)
+                              ? "bg-green-100 text-green-700 border border-green-200 shadow-none cursor-not-allowed opacity-100"
+                              : "bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-red-500/30"
+                            }
+                          `}
+                        >
+                          {(report.alert_message === "MEDICAL_CAMP_ARRANGED" || report.medical_camp_arranged) ? (
+                            <>
+                              <Tent className="h-5 w-5 mr-2" /> Medical Camp Arranged
+                            </>
+                          ) : (
+                            <>
+                              <Tent className="h-5 w-5 mr-2" /> Arrange Medical Camp
+                            </>
+                          )}
+                        </Button>
+
+                        <Button variant="outline" onClick={() => handlePrint(report.id)} className="w-full border-slate-300 text-slate-600 hover:bg-slate-50 rounded-xl py-6 font-semibold">
+                          <Printer className="h-4 w-4 mr-2" /> Print Report
+                        </Button>
+                      </div>
                     </div>
+
                   </div>
-
-                  {/* Middle Column: Health Data */}
-                  <div className="w-full md:w-2/4 border-l border-slate-100 pl-6 space-y-4">
-                    <div>
-                      <p className="text-xs font-bold text-slate-400 uppercase mb-1">Prediction</p>
-                      <p className="font-bold text-slate-800">{report.predicted_disease || "General Infection"}</p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-bold text-slate-400 uppercase mb-1">Symptoms ({report.people_affected || 1} affected)</p>
-                      <div className="flex flex-wrap gap-2">
-                        {report.symptoms && report.symptoms.length > 0 ? report.symptoms.map(s => (
-                          <Badge key={s} variant="secondary" className="bg-slate-100 text-slate-600 border-slate-200 font-normal">{s}</Badge>
-                        )) : <span className="text-sm text-slate-400">No specific symptoms recorded</span>}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mt-2">
-                      <div className="bg-white border border-slate-200 rounded-lg p-3 text-center">
-                        <div className="text-xs text-slate-400 font-bold uppercase">pH</div>
-                        <div className="text-xl font-bold text-blue-600">{report.water_ph}</div>
-                      </div>
-                      <div className="bg-white border border-slate-200 rounded-lg p-3 text-center">
-                        <div className="text-xs text-slate-400 font-bold uppercase">Turbidity</div>
-                        <div className="text-xl font-bold text-green-600">{report.water_turbidity}</div>
-                      </div>
-                    </div>
-
-                    {/* Display AI Advice if no worker advice yet */}
-                    {!report.health_advice && report.disease_advice && (
-                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-600">
-                        <span className="font-bold block mb-1">AI Recommendation:</span>
-                        {report.disease_advice}
-                      </div>
-                    )}
-
-                    {/* Display Worker Advice */}
-                    {report.health_advice && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 animate-in fade-in">
-                        <span className="font-bold flex items-center gap-2 mb-1">
-                          <MessageSquarePlus className="h-4 w-4" /> Your Advice:
-                        </span>
-                        {report.health_advice}
-                      </div>
-                    )}
-
-                    <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-xs text-red-700">
-                      <span className="font-bold">Possible: {report.possible_organism || "Low Microbial Presence (Safe)"}</span>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Actions */}
-                  <div className="w-full md:w-1/4 border-l border-slate-100 pl-6 flex flex-col gap-3 justify-center print:hidden">
-                    <div className="text-xs font-bold text-slate-400 uppercase mb-1">Actions</div>
-
-                    <Button
-                      onClick={() => openAdviceDialog(report.id, report.health_advice)}
-                      className="w-full bg-blue-600 hover:bg-blue-700 shadow-sm gap-2"
-                    >
-                      <MessageSquarePlus className="h-4 w-4" /> {report.health_advice ? "Update Advise" : "Advise"}
-                    </Button>
-
-                    <Button variant="outline" onClick={handlePrint} className="w-full border-slate-200 text-slate-600 gap-2">
-                      <Printer className="h-4 w-4" /> Print
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      onClick={() => handleDelete(report.id)}
-                      className="w-full border-slate-200 text-slate-600 gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                    >
-                      <Trash2 className="h-4 w-4" /> Delete
-                    </Button>
-                  </div>
-
                 </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
 
         {/* Advice Dialog */}

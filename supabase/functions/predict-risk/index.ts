@@ -274,17 +274,68 @@ serve(async (req) => {
     };
     let prediction = predictRandomForest(trainedModel as TrainedModel, features);
 
-    // Override: Force High Risk if symptoms are severe (>5 total cases) AND widespread (>10 people affected)
+    // Override rules based on Hybrid Risk Assessment Logic (Strict + General)
     const totalSymptoms = fever + diarrhea + vomiting;
-    if (totalSymptoms > 5 && people_affected > 10) {
-      console.log("⚠️ OVERRIDE TRIGGERED: High symptoms count (" + totalSymptoms + ") and high affected people (" + people_affected + ")");
+    const s_fever = fever > 0;
+    const s_diarrhea = diarrhea > 0;
+    const s_vomiting = vomiting > 0;
+    // Note: We don't have detailed symptoms like 'dehydration', 'blood_stool' in this summarized input.
+    // relying on what we have. If detailed strict rules can't be fully checked, we rely on General Rules + existing signals.
+
+    // --- STEP 1: Strict Rules (Partially applicable with limited features) ---
+    // High Risk: (fever + stomach pain + vomiting) -> we have fever, vomiting. stomach_pain is missing here.
+    // High Risk: severe diarrhea + dehydration + vomiting -> we have diarrhea, vomiting.
+    // We will approximate strict rules based on high counts of specific symptoms + total people.
+
+    let hybridRiskLevel = -1; // -1 means no strict rule matched yet
+
+    // Strict High Approximation: High Fever/Diarrhea/Vomiting counts + High People
+    if ((diarrhea > 3 && vomiting > 3 && fever > 3) && people_affected >= 20) {
+      hybridRiskLevel = 2; // High
+    }
+
+    // Strict Moderate Approximation: 
+    // diarrhea OR vomiting (we have these) AND total symptoms 4 or 5 AND affected 10-19
+    else if ((diarrhea > 0 || vomiting > 0) && (totalSymptoms === 4 || totalSymptoms === 5) && (people_affected >= 10 && people_affected <= 19)) {
+      hybridRiskLevel = 1; // Moderate
+    }
+    // fever AND weakness (weakness missing) -> can't check fully.
+
+    // --- STEP 2: General Risk Logic (Fallback) ---
+    if (hybridRiskLevel === -1) {
+      // High Risk: Symptoms >= 6 AND Affected people >= 20
+      if (totalSymptoms >= 6 && people_affected >= 20) {
+        hybridRiskLevel = 2; // High
+      }
+      // Moderate Risk: Symptoms 4 or 5 AND Affected people between 15 and 19
+      else if ((totalSymptoms === 4 || totalSymptoms === 5) && (people_affected >= 15 && people_affected <= 19)) {
+        hybridRiskLevel = 1; // Moderate
+      }
+      // Low Risk: Symptoms <= 3 AND Affected people < 10
+      else if (totalSymptoms <= 3 && people_affected < 10) {
+        hybridRiskLevel = 0; // Low
+      }
+    }
+
+    // Apply Override if a rule matched
+    if (hybridRiskLevel !== -1) {
+      const levels = ["Safe", "Moderate", "High"];
+      console.log(`⚠️ HYBRID OVERRIDE: ${levels[hybridRiskLevel]} Risk (Symptoms: ${totalSymptoms}, Affected: ${people_affected})`);
       prediction = {
-        risk_level: 2,
-        alert_level: "High",
-        risk_score: 100,
+        risk_level: hybridRiskLevel,
+        alert_level: levels[hybridRiskLevel],
+        risk_score: hybridRiskLevel * 50,
         confidence: 1.0,
-        probabilities: [0, 0, 1],
-        tree_votes: { safe: 0, moderate: 0, high: trainedModel.n_estimators }
+        probabilities: [
+          hybridRiskLevel === 0 ? 1 : 0,
+          hybridRiskLevel === 1 ? 1 : 0,
+          hybridRiskLevel === 2 ? 1 : 0
+        ],
+        tree_votes: {
+          safe: hybridRiskLevel === 0 ? trainedModel.n_estimators : 0,
+          moderate: hybridRiskLevel === 1 ? trainedModel.n_estimators : 0,
+          high: hybridRiskLevel === 2 ? trainedModel.n_estimators : 0
+        }
       };
     }
 

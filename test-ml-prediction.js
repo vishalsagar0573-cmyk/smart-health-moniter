@@ -5,96 +5,60 @@ console.log('🧪 Testing Enhanced ML Disease Prediction\n');
 console.log('='.repeat(60));
 
 // Test cases covering different scenarios
+// Test cases covering different scenarios
 const testCases = [
+  // --- STRICT RULE TESTS ---
   {
-    name: "Cholera / Severe Gastroenteritis",
-    symptoms: ["diarrhea", "vomiting", "dehydration"],
-    peopleAffected: 1,
+    name: "Strict High Rule: Severe Diarrhea/Dehydration/Vomiting (20 people)",
+    symptoms: ["diarrhea", "dehydration", "vomiting"],
+    peopleAffected: 20,
     expected: {
-      disease: "Cholera",
       risk: "High",
       urgency: "Emergency"
     }
   },
   {
-    name: "Typhoid / Dengue",
-    symptoms: ["fever", "headache", "weakness", "nausea", "body_pain"],
-    peopleAffected: 1,
+    name: "Strict High Rule: Bloody Diarrhea + Fever (15 people)",
+    symptoms: ["blood_stool", "fever"],
+    peopleAffected: 15,
     expected: {
-      disease: "Dengue", // Fever + Body Pain + Headache + Nausea -> Dengue (per strict rules)
+      risk: "High",
+      urgency: "Emergency"
+    }
+  },
+  {
+    name: "Strict Moderate Rule: Fever + Weakness (12 people)",
+    symptoms: ["fever", "weakness"],
+    peopleAffected: 12,
+    expected: {
+      risk: "Moderate",
+      urgency: "Warning"
+    }
+  },
+  // --- GENERAL RULE TESTS ---
+  {
+    name: "General High Rule: 6 Symptoms (25 people)",
+    symptoms: ["fever", "diarrhea", "vomiting", "headache", "nausea", "body_pain"],
+    peopleAffected: 25,
+    expected: {
       risk: "High",
       urgency: "Urgent"
     }
   },
   {
-    name: "Hepatitis A",
-    symptoms: ["jaundice", "dark_urine", "nausea", "loss_appetite"],
-    peopleAffected: 1,
+    name: "General Moderate Rule: 4 Symptoms (17 people)",
+    symptoms: ["fever", "diarrhea", "vomiting", "headache"],
+    peopleAffected: 17,
     expected: {
-      disease: "Hepatitis",
-      risk: "High", // Jaundice is critical -> High
-      urgency: "Emergency"
-    }
-  },
-  {
-    name: "Bacterial Dysentery",
-    symptoms: ["diarrhea", "blood_stool", "stomach_pain", "fever"],
-    peopleAffected: 1,
-    expected: {
-      disease: "Dysentery",
-      risk: "High", // Blood in stool is critical -> High
-      urgency: "Emergency"
-    }
-  },
-  {
-    name: "Skin Infection",
-    symptoms: ["rash", "fever"],
-    peopleAffected: 1,
-    expected: {
-      disease: "Skin Infection",
-      risk: "Moderate", // 2 symptoms -> Moderate
-      urgency: "Warning"
-    }
-  },
-  {
-    name: "Malaria / Viral Infection",
-    symptoms: ["fever", "body_pain", "headache", "weakness"],
-    peopleAffected: 1,
-    expected: {
-      disease: "Viral Fever",
       risk: "Moderate",
       urgency: "Warning"
     }
   },
   {
-    name: "Community Outbreak (Multiple People)",
-    symptoms: ["diarrhea", "vomiting", "fever"],
+    name: "General Low Rule: 2 Symptoms (5 people)",
+    symptoms: ["headache", "nausea"],
     peopleAffected: 5,
-    waterQuality: {
-      ph: 6.0,
-      turbidity: 8.5
-    },
     expected: {
-      disease: "Acute Gastroenteritis",
-      risk: "High", // Outbreak + Severe symptoms -> High
-      urgency: "Emergency"
-    }
-  },
-  {
-    name: "Mild Symptoms",
-    symptoms: ["headache", "weakness"],
-    peopleAffected: 1,
-    expected: {
-      risk: "Moderate", // 2 symptoms -> Moderate
-      urgency: "Warning"
-    }
-  },
-  {
-    name: "No Symptoms",
-    symptoms: [],
-    peopleAffected: 1,
-    expected: {
-      disease: "General Health Check",
       risk: "Low",
       urgency: "Normal"
     }
@@ -102,135 +66,79 @@ const testCases = [
 ];
 
 // Simulate prediction (since we can't call the Edge Function directly without deployment)
+// Simulate Hybrid Risk Assessment Logic
 function simulatePrediction(testCase) {
-  const { symptoms, peopleAffected, waterQuality } = testCase;
+  const { symptoms, peopleAffected } = testCase;
 
-  // Simulate the logic from the Edge Function
-  const criticalSymptoms = ['blood_stool', 'jaundice', 'dehydration'];
-  const hasCriticalSymptom = symptoms.some(s => criticalSymptoms.includes(s));
+  // --- STEP 1: Strict Rules (Highest Priority) ---
+  let strictMatch = null;
+  const s = new Set(symptoms);
+  const symptomCount = symptoms.length;
 
-  const severeSymptoms = ['fever', 'vomiting', 'diarrhea', 'dark_urine'];
-  const severeCount = symptoms.filter(s => severeSymptoms.includes(s)).length;
+  // 🔴 High Risk Strict Rules
+  if (s.has("diarrhea") && s.has("dehydration") && s.has("vomiting") && peopleAffected >= 20) {
+    strictMatch = { risk: "High", urgency: "Emergency" };
+  }
+  else if (s.has("fever") && s.has("stomach_pain") && s.has("vomiting") && peopleAffected >= 20) {
+    strictMatch = { risk: "High", urgency: "Emergency" };
+  }
+  else if (s.has("blood_stool") && s.has("fever") && peopleAffected >= 15) {
+    strictMatch = { risk: "High", urgency: "Emergency" };
+  }
 
-  const manyPeopleAffected = peopleAffected > 3;
-  const poorWaterQuality = waterQuality && (
-    waterQuality.ph < 6.5 || waterQuality.ph > 8.5 ||
-    waterQuality.turbidity > 5
-  );
+  // 🟡 Moderate Risk Strict Rules
+  const hasGI = s.has("diarrhea") || s.has("vomiting") || s.has("stomach_pain");
+  // Rule: diarrhea/vomiting/stomach_pain AND count 4-5 AND affected 10-19
+  if (!strictMatch && hasGI && (symptomCount === 4 || symptomCount === 5) && (peopleAffected >= 10 && peopleAffected <= 19)) {
+    strictMatch = { risk: "Moderate", urgency: "Warning" };
+  }
 
-  // Determine risk level (Updated to match new strict rules)
-  let risk_level;
-  if (hasCriticalSymptom || (severeCount >= 3 && manyPeopleAffected)) {
+  // Rule: fever AND weakness AND affected 10-19
+  if (!strictMatch && s.has("fever") && s.has("weakness") && (peopleAffected >= 10 && peopleAffected <= 19)) {
+    strictMatch = { risk: "Moderate", urgency: "Warning" };
+  }
+
+  if (strictMatch) {
+    return {
+      predicted_disease: "Strict Rule Matched",
+      risk_level: strictMatch.risk,
+      urgency: strictMatch.urgency,
+      confidence: 1.0,
+      advice: "Strict rule applied.",
+      key_symptoms_detected: symptoms.slice(0, 3)
+    };
+  }
+
+
+  // --- STEP 2: General Risk Logic (Fallback) ---
+  let risk_level = "Low"; // default
+
+  if (symptomCount >= 6 && peopleAffected >= 20) {
     risk_level = "High";
-  } else if (severeCount >= 3 || manyPeopleAffected || poorWaterQuality) {
-    risk_level = "High";
-  } else if (symptoms.length >= 2 || peopleAffected > 1) {
+  } else if ((symptomCount === 4 || symptomCount === 5) && (peopleAffected >= 15 && peopleAffected <= 19)) {
     risk_level = "Moderate";
-  } else {
+  } else if (symptomCount <= 3 && peopleAffected < 10) {
     risk_level = "Low";
-  }
-
-  // Determine urgency
-  let urgency;
-  if (hasCriticalSymptom || risk_level === "Severe" || risk_level === "Critical" || risk_level === "High") {
-    urgency = "Emergency";
-  } else if (risk_level === "High") {
-    urgency = "Urgent";
-  } else if (risk_level === "Moderate") {
-    urgency = "Warning";
   } else {
-    urgency = "Normal";
-  }
-
-  // Override for Dengue (as per strict rules in index.ts)
-  if (symptoms.includes("fever") && symptoms.includes("body_pain") && symptoms.includes("headache") && (symptoms.includes("rash") || symptoms.includes("nausea"))) {
-    risk_level = "High";
-    urgency = "Urgent";
-  }
-
-  // Determine disease (Strict Rules Simulation)
-  let predicted_disease = "Unknown";
-
-  // Strict Rules
-  if (symptoms.includes("diarrhea") && symptoms.includes("vomiting") && symptoms.includes("dehydration")) {
-    predicted_disease = "Cholera";
-  } else if (symptoms.includes("fever") && symptoms.includes("body_pain") && symptoms.includes("headache")) {
-    if (symptoms.includes("rash") || symptoms.includes("nausea")) {
-      predicted_disease = "Dengue";
-    } else {
-      predicted_disease = "Viral Fever";
-    }
-  } else if (symptoms.includes("jaundice") && symptoms.includes("dark_urine")) {
-    predicted_disease = "Hepatitis A/E";
-  } else if (symptoms.includes("cough") && symptoms.includes("fever")) {
-    predicted_disease = "Respiratory Infection";
-  } else if (symptoms.includes("blood_stool")) {
-    predicted_disease = "Dysentery";
-  } else if (symptoms.includes("rash")) {
-    predicted_disease = "Water-related Skin Infection";
-  } else if ((symptoms.includes("diarrhea") && symptoms.includes("vomiting")) || (symptoms.includes("diarrhea") && symptoms.includes("stomach_pain"))) {
-    predicted_disease = "Acute Gastroenteritis";
-  } else if (symptoms.length === 0) {
-    predicted_disease = "General Health Check";
-  } else {
-    // Fallback
-    if (hasCriticalSymptom) {
-      predicted_disease = "Acute Gastroenteritis";
-    } else if (symptoms.length >= 3) {
-      predicted_disease = "Viral Gastroenteritis";
-    } else {
-      predicted_disease = "Mild Viral Infection";
+    // --- STEP 3: Fallback Logic ---
+    const criticalSymptoms = ['blood_stool', 'jaundice', 'dehydration'];
+    const hasCriticalSymptom = symptoms.some(sym => criticalSymptoms.includes(sym));
+    if (hasCriticalSymptom || peopleAffected > 5) {
+      risk_level = "Moderate";
     }
   }
 
-  // Get key symptoms
-  const prioritySymptoms = [
-    'blood_stool', 'jaundice', 'dehydration', 'diarrhea', 'vomiting',
-    'fever', 'dark_urine', 'stomach_pain', 'nausea', 'weakness'
-  ];
-  const key_symptoms_detected = symptoms
-    .filter(s => prioritySymptoms.includes(s))
-    .slice(0, 5);
-
-  // Generate advice
-  let advice = "";
-  if (urgency === "Emergency") {
-    advice = "🚨 EMERGENCY: ";
-  } else if (urgency === "Urgent") {
-    advice = "⚠️ URGENT: ";
-  } else if (urgency === "Warning") {
-    advice = "⚠️ WARNING: ";
-  } else {
-    advice = "ℹ️ ";
-  }
-
-  if (predicted_disease.includes("Cholera")) {
-    advice += "- Start ORS immediately to prevent dehydration.\n- Avoid contaminated water and food.\n- Seek urgent medical attention if symptoms worsen.";
-  } else if (predicted_disease.includes("Typhoid")) {
-    advice += "- Seek medical attention for antibiotics.\n- Drink only boiled water.\n- Maintain strict hygiene and rest.";
-  } else if (predicted_disease.includes("Hepatitis")) {
-    advice += "- Rest completely and avoid physical exertion.\n- Eat a low-fat diet and avoid alcohol.\n- Drink boiled water and maintain strict hygiene.";
-  } else if (predicted_disease.includes("Dysentery")) {
-    advice += "- Seek medical care for proper treatment.\n- Drink boiled water and ORS.\n- Isolate to prevent spread.";
-  } else if (predicted_disease.includes("Skin Infection")) {
-    advice += "- Keep affected area clean and dry.\n- Avoid scratching.\n- Consult a health worker if it worsens.";
-  } else if (predicted_disease.includes("Malaria") || predicted_disease.includes("Dengue")) {
-    advice += "- Seek immediate medical testing.\n- Rest and stay hydrated.\n- Use mosquito nets and eliminate standing water.";
-  } else {
-    advice += "- Monitor symptoms closely.\n- Drink only boiled water.\n- Consult a health worker if symptoms persist or worsen.";
-  }
-
-  if (peopleAffected > 3) {
-    advice += ` ⚠️ COMMUNITY ALERT: ${peopleAffected} people affected - possible outbreak.`;
-  }
+  let urgency = "Normal";
+  if (risk_level === "High") urgency = "Urgent";
+  if (risk_level === "Moderate") urgency = "Warning";
 
   return {
-    predicted_disease,
-    confidence: 0.95,
+    predicted_disease: "General Assessment",
     risk_level,
     urgency,
-    advice,
-    key_symptoms_detected
+    confidence: 0.8,
+    advice: "General rule applied.",
+    key_symptoms_detected: symptoms.slice(0, 3)
   };
 }
 
