@@ -1,246 +1,821 @@
-# Health Monitor - Village Health Reporting System
+# 🌊 AI-Based Early Warning System for Water-Borne Diseases
 
-A comprehensive health monitoring system for villages, enabling villagers to report health issues and health workers to monitor and provide advice.
+### AI-Powered Health Monitoring, Water Quality Analysis & Disease Risk Prediction
 
-## Project Structure
+The **AI-Based Early Warning System for Water-Borne Diseases** is a comprehensive village health monitoring platform designed to help identify potential water-borne disease risks at an early stage.
 
+The system enables villagers to report health issues, symptoms, locations, and water sample images. Health workers can monitor these reports, analyze health trends, evaluate water quality, predict potential diseases, assess risk levels, and provide safety recommendations.
+
+The platform combines **Artificial Intelligence, Machine Learning, Computer Vision, and real-time data analysis** into a unified health monitoring system.
+
+---
+
+## ❗ Problem Statement
+
+Water-borne diseases remain a significant health concern in rural and village communities, where access to timely healthcare, water-quality monitoring, and early disease detection can be limited.
+
+Traditional health monitoring methods often depend on manual reporting and delayed analysis, making it difficult for health workers to identify emerging health risks and potential disease patterns at an early stage.
+
+### Major Challenges
+
+- Limited monitoring of water quality in rural areas
+- Delayed reporting of health issues
+- Difficulty in identifying potential water-borne diseases from symptoms
+- Lack of centralized health and water-quality information
+- Limited tools for identifying high-risk areas
+- Difficulty in analyzing health trends and patterns
+
+To address these challenges, this system combines health reporting, water-quality image analysis, machine-learning-based disease prediction, risk assessment, and interactive visualization into a single platform.
+
+The system is designed to help health workers **monitor health conditions, identify potential risks earlier, analyze trends, and provide timely safety recommendations**.
+
+---
+
+## 🎯 Objectives
+
+The main objectives of the system are:
+
+- To provide a digital platform for village health reporting
+- To analyze water sample images using AI and computer vision
+- To predict potential diseases based on reported symptoms
+- To assess health risks using symptoms and water-quality information
+- To provide health workers with a centralized monitoring dashboard
+- To visualize reported cases geographically
+- To identify health trends and patterns
+- To support early identification of potential water-borne disease risks
+
+---
+
+## ✨ Key Features
+
+### 🏥 Villager Health Reporting
+
+Allows villagers to submit health reports containing:
+
+- Symptoms
+- Symptom information
+- Location
+- Water sample images
+- Other relevant health information
+
+### 👨‍⚕️ Health Worker Dashboard
+
+Health workers can:
+
+- View submitted health reports
+- Monitor reported cases
+- Analyze health trends
+- Review risk assessments
+- Provide safety advice
+- Monitor geographical patterns
+
+### 🤖 AI-Powered Image Validation
+
+Uploaded water sample images are validated and analyzed using **Google Gemini 2.5 Flash** before further processing.
+
+### 💧 OpenCV Water Quality Analysis
+
+The system uses **OpenCV** for computer-vision-based water analysis, including characteristics such as:
+
+- pH
+- Turbidity
+- Visual water characteristics
+
+### 🧠 ML Disease Prediction
+
+A **Random Forest Classifier** analyzes reported symptoms and predicts potential diseases.
+
+### ⚠️ Risk Assessment
+
+The system evaluates health risk levels using information such as:
+
+- Reported symptoms
+- Symptom intensity
+- Water-quality information
+
+### 🗺️ Interactive Maps
+
+Reported health issues can be visualized geographically using **Mapbox GL**.
+
+### 📊 Trend Analysis
+
+Health workers can analyze health patterns using:
+
+- Charts
+- Statistics
+- Report trends
+- Geographical information
+
+### 🔐 Authentication & Data Management
+
+**Supabase** provides:
+
+- Authentication
+- Database
+- Storage
+- Edge Functions
+- Row Level Security
+
+---
+
+## 🔄 System Workflow
+
+```text
+                    Villager
+                       │
+                       ↓
+             Health Issue Report
+                       │
+             ┌─────────┴─────────┐
+             ↓                   ↓
+        Symptoms              Location
+             │                   │
+             └─────────┬─────────┘
+                       ↓
+              Water Sample Image
+                       │
+                       ↓
+             AI Image Validation
+              (Google Gemini)
+                       │
+                       ↓
+              OpenCV Water Analysis
+                       │
+                       ↓
+              ┌────────┴─────────┐
+              ↓                  ↓
+       Disease Prediction    Risk Assessment
+       (Random Forest)       (Health + Water)
+              │                  │
+              └────────┬─────────┘
+                       ↓
+                Analysis Results
+                       │
+                       ↓
+            Health Worker Dashboard
+                       │
+          ┌────────────┼────────────┐
+          ↓            ↓            ↓
+       Reports       Trends       Maps
+          │            │            │
+          └────────────┼────────────┘
+                       ↓
+                Safety Advice
 ```
-health monitor/
-├── backend/                    # All backend services
-│   ├── ml/                     # Machine Learning
-│   │   ├── create_dataset.py   # Dataset generation
-│   │   ├── preprocess_dataset.py  # Data preprocessing
-│   │   ├── train_model.py      # Model training
-│   │   └── requirements.txt    # Python dependencies
-│   ├── opencv/                 # OpenCV Water Quality Analysis
-│   │   ├── opencv_analyzer.py  # Main OpenCV service
-│   │   ├── requirements.txt    # Python dependencies
-│   │   ├── start.bat           # Windows startup script
-│   │   ├── start.sh            # Linux/Mac startup script
-│   │   └── README.md           # OpenCV documentation
-│   └── README.md               # Backend overview
-├── frontend/                   # React frontend application
-│   ├── components/             # React components
-│   ├── pages/                  # Page components
-│   ├── hooks/                  # Custom React hooks
-│   ├── integrations/           # External integrations (Supabase)
-│   ├── lib/                    # Utility libraries
-│   ├── utils/                  # Helper utilities
-│   ├── App.tsx                 # Main app component
-│   ├── main.tsx                # Entry point
-│   └── index.css               # Global styles
-├── supabase/                   # Supabase infrastructure
-│   ├── functions/              # Edge Functions (TypeScript/Deno)
-│   │   ├── analyze-water-image/  # Water image analysis API
-│   │   ├── predict-disease/      # Disease prediction API
-│   │   ├── predict-risk/         # Risk assessment API
-│   │   └── fetch-water-quality-data/  # Water quality data API
-│   └── migrations/             # Database migrations
-└── [root config files]        # Vite, TypeScript, package.json, etc.
-```
 
-## Features
+---
 
-- **Villager Dashboard**: Report health issues with symptoms, location, and water sample images
-- **Health Worker Dashboard**: View all reports, analyze trends, and provide safety advice
-- **AI-Powered Image Validation**: Validates water sample images using Google Gemini AI
-- **OpenCV Water Analysis**: Analyzes water quality (pH, turbidity) using computer vision
-- **ML Disease Prediction**: Predicts diseases based on symptoms using Random Forest classifier
-- **Risk Assessment**: Evaluates health risk levels based on symptoms and water quality
-- **Interactive Maps**: Visualize report locations using Mapbox
-- **Trend Analysis**: Analyze health patterns with charts and statistics
-
-## Technologies
+## 🛠️ Technologies Used
 
 ### Frontend
-- **React** - UI framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **Shadcn/ui** - UI component library
-- **React Router** - Routing
-- **Recharts** - Data visualization
-- **Mapbox GL** - Interactive maps
+
+- **React** – User interface development
+- **TypeScript** – Type-safe application development
+- **Tailwind CSS** – Responsive and modern styling
+- **Shadcn/ui** – UI component library
+- **React Router** – Application routing
+- **Recharts** – Data visualization and charts
+- **Mapbox GL** – Interactive geographical maps
 
 ### Backend
-- **Supabase** - Backend-as-a-Service (Database, Auth, Storage, Edge Functions)
-- **Python** - ML and OpenCV services
-- **OpenCV** - Computer vision for water quality analysis
-- **scikit-learn** - Machine learning models
-- **Flask** - OpenCV service web framework
 
-### AI/ML
-- **Google Gemini 2.5 Flash** - Image validation and analysis
-- **Random Forest Classifier** - Disease prediction
-- **Feature Engineering** - Symptom co-occurrence, intensity scores
+- **Supabase** – Backend-as-a-Service
+- **Python** – Machine learning and computer vision services
+- **Flask** – Web framework for the OpenCV service
+- **OpenCV** – Computer vision and water-quality analysis
 
-## Getting Started
+### AI / Machine Learning
 
-### Prerequisites
+- **Google Gemini 2.5 Flash** – Image validation and analysis
+- **Scikit-learn** – Machine learning implementation
+- **Random Forest Classifier** – Disease prediction
+- **Feature Engineering** – Symptom co-occurrence and intensity-based features
 
-- Node.js 18+ and npm
-- Python 3.8+
-- Supabase account and project
+### Database & Cloud
 
-### Frontend Setup
+- **PostgreSQL / Supabase** – Data storage
+- **Supabase Edge Functions** – Serverless API functions
+- **Supabase Storage** – Image and file storage
+- **Supabase Authentication** – User authentication
+
+---
+
+## 🤖 AI / ML Methodology
+
+### 1. Water Image Validation
+
+When a villager uploads a water sample image, the image is validated using **Google Gemini 2.5 Flash**.
+
+```text
+Water Sample Image
+        ↓
+Google Gemini
+        ↓
+Image Validation
+        ↓
+Further Water Analysis
+```
+
+---
+
+### 2. Water Quality Analysis
+
+The validated water image is processed using **OpenCV** to analyze water-quality characteristics.
+
+The system includes analysis related to:
+
+- pH
+- Turbidity
+- Visual water characteristics
+
+```text
+Water Image
+     ↓
+OpenCV Processing
+     ↓
+Water Quality Analysis
+     ↓
+Quality Information
+```
+
+---
+
+### 3. Disease Prediction
+
+The system uses reported symptoms as input to a **Random Forest Classifier**.
+
+```text
+Reported Symptoms
+        ↓
+Feature Engineering
+        ↓
+Machine Learning Model
+        ↓
+Random Forest Classifier
+        ↓
+Disease Prediction
+```
+
+The feature-engineering process includes symptom-related information such as:
+
+- Symptom co-occurrence
+- Symptom intensity
+
+---
+
+### 4. Risk Assessment
+
+The system combines health and water-quality information to evaluate potential risk levels.
+
+```text
+Symptoms
+   +
+Water Quality
+   +
+Symptom Intensity
+   ↓
+Risk Assessment
+   ↓
+Health Risk Level
+```
+
+---
+
+### 5. Health Trend Analysis
+
+Reported health information is analyzed and visualized to help health workers identify:
+
+- Health patterns
+- Report trends
+- Potential risk areas
+- Geographical distribution
+
+---
+
+## 📊 System Components
+
+| Component | Purpose |
+|---|---|
+| Villager Dashboard | Submit health reports and water samples |
+| Health Worker Dashboard | Monitor and analyze health reports |
+| Gemini AI | Validate and analyze water sample images |
+| OpenCV | Analyze water-quality characteristics |
+| Random Forest | Predict potential diseases |
+| Risk Assessment | Evaluate health-risk levels |
+| Mapbox GL | Visualize geographical reports |
+| Recharts | Display health trends and statistics |
+| Supabase | Database, authentication, storage and backend services |
+| Edge Functions | Provide serverless API functionality |
+
+---
+
+## 📁 Project Structure
+
+```text
+Health-Monitor/
+│
+├── backend/
+│   │
+│   ├── ml/
+│   │   ├── create_dataset.py
+│   │   ├── preprocess_dataset.py
+│   │   ├── train_model.py
+│   │   └── requirements.txt
+│   │
+│   ├── opencv/
+│   │   ├── opencv_analyzer.py
+│   │   ├── requirements.txt
+│   │   ├── start.bat
+│   │   ├── start.sh
+│   │   └── README.md
+│   │
+│   └── README.md
+│
+├── frontend/
+│   ├── components/
+│   ├── pages/
+│   ├── hooks/
+│   ├── integrations/
+│   ├── lib/
+│   ├── utils/
+│   ├── App.tsx
+│   ├── main.tsx
+│   └── index.css
+│
+├── supabase/
+│   │
+│   ├── functions/
+│   │   ├── analyze-water-image/
+│   │   ├── predict-disease/
+│   │   ├── predict-risk/
+│   │   └── fetch-water-quality-data/
+│   │
+│   └── migrations/
+│
+├── package.json
+├── vite.config.*
+├── tsconfig.*
+└── README.md
+```
+
+---
+
+## 📂 Project Organization
+
+### Backend
+
+The `backend/` directory contains the machine learning and computer vision services.
+
+#### `backend/ml/`
+
+Contains the machine-learning pipeline:
+
+- Dataset generation
+- Dataset preprocessing
+- Model training
+- ML dependencies
+
+#### `backend/opencv/`
+
+Contains the computer-vision service responsible for water-quality image analysis.
+
+---
+
+### Frontend
+
+The `frontend/` directory contains the React application.
+
+It includes:
+
+- Reusable components
+- Page components
+- Custom hooks
+- Supabase integrations
+- Utility functions
+- Application routing
+- Global styling
+
+---
+
+### Supabase
+
+The `supabase/` directory contains the project's backend infrastructure.
+
+It includes:
+
+- Edge Functions
+- Database migrations
+- Backend API functionality
+- Data security policies
+
+### Edge Functions
+
+The system includes:
+
+```text
+analyze-water-image/
+        ↓
+Water image analysis
+
+predict-disease/
+        ↓
+Disease prediction
+
+predict-risk/
+        ↓
+Risk assessment
+
+fetch-water-quality-data/
+        ↓
+Water-quality data retrieval
+```
+
+---
+
+# 🚀 Getting Started
+
+## Prerequisites
+
+Before running the project, install:
+
+- **Node.js 18+**
+- **npm**
+- **Python 3.8+**
+- **Supabase account and project**
+
+---
+
+## 1. Frontend Setup
+
+Open a terminal in the project root:
 
 ```bash
-# Install dependencies
 npm install
+```
 
-# Start development server
+Start the development server:
+
+```bash
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:8080`
+The frontend will be available at:
 
-Create a `.env.local` (or `.env`) file in the project root with your Supabase credentials:
+```text
+http://localhost:8080
+```
+
+---
+
+## 2. Configure Supabase
+
+Create a `.env.local` or `.env` file in the project root.
 
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-Without these values, registration and login will fail with “Failed to fetch”.
+### Important
 
-### Backend Setup
+- Do not commit private credentials to GitHub.
+- Do not expose service-role keys.
+- Do not commit private API keys.
+- Restart the development server after changing environment variables.
 
-#### ML Backend
+---
+
+## 3. Machine Learning Backend Setup
+
+Navigate to the ML directory:
 
 ```bash
 cd backend/ml
+```
+
+Install the required Python packages:
+
+```bash
 pip install -r requirements.txt
+```
 
-# Generate dataset
+Generate the dataset:
+
+```bash
 python create_dataset.py
+```
 
-# Train model
+Train the model:
+
+```bash
 python train_model.py dataset.csv
 ```
 
-#### OpenCV Backend
+---
+
+## 4. OpenCV Backend Setup
+
+Navigate to the OpenCV directory:
 
 ```bash
 cd backend/opencv
+```
+
+Install dependencies:
+
+```bash
 pip install -r requirements.txt
+```
 
-# Start service
+Start the OpenCV service:
+
+```bash
 python opencv_analyzer.py
-# Or use: start.bat (Windows) or ./start.sh (Linux/Mac)
 ```
 
-The OpenCV service will run on `http://localhost:8000`
+The OpenCV service will run on:
 
-### Supabase Setup
+```text
+http://localhost:8000
+```
 
-1. Create a Supabase project
-2. Run migrations:
-   ```bash
-   supabase db push
-   ```
-3. Set environment variables:
-   ```bash
-   supabase secrets set OPENCV_SERVICE_URL=http://localhost:8000
-   supabase secrets set LOVABLE_API_KEY=your_api_key
-   ```
-4. Deploy Edge Functions:
-   ```bash
-   supabase functions deploy analyze-water-image
-   supabase functions deploy predict-disease
-   supabase functions deploy predict-risk
-   ```
+### Windows
 
-## Project Organization
-
-### Backend (`backend/`)
-All backend services are organized here:
-- **`ml/`**: Machine learning models and training scripts
-- **`opencv/`**: OpenCV water quality analysis service
-
-### Frontend (`frontend/`)
-React application with modern UI:
-- Component-based architecture
-- TypeScript for type safety
-- Tailwind CSS for styling
-- Shadcn/ui components
-
-### Supabase (`supabase/`)
-Infrastructure and serverless functions:
-- Edge Functions for API endpoints
-- Database migrations
-- Row Level Security policies
-
-## Documentation
-
-- **Backend Overview**: See `backend/README.md`
-- **ML Documentation**: See `backend/ml/README.md`
-- **OpenCV Documentation**: See `backend/opencv/README.md`
-
-## Development
-
-### Running Locally
-
-1. Start Supabase locally (if using local development):
-   ```bash
-   supabase start
-   ```
-
-2. Start OpenCV service:
-   ```bash
-   cd backend/opencv
-   python opencv_analyzer.py
-   ```
-
-3. Start frontend:
-   ```bash
-   npm run dev
-   ```
-
-### Building for Production
+You can also use:
 
 ```bash
-# Build frontend
-npm run build
-
-# Deploy Supabase functions
-supabase functions deploy
+start.bat
 ```
 
-## Deployment
+### Linux / macOS
 
-- **Frontend**: Deploy via Lovable or any static hosting (Vercel, Netlify, etc.)
-- **Backend Services**: Deploy OpenCV service to cloud platform (Heroku, Railway, Render, etc.)
-- **Supabase**: Hosted service with Edge Functions
+Use:
 
-## License
-
-This project is part of the Health Monitor system.
-
-
-## Important Setup Notes
-
-### Environment Variables
-Your `.env.local` file should contain:
 ```bash
-VITE_SUPABASE_URL=https://usynxptupskoeceomjky.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key-here
+./start.sh
 ```
 
-**Critical:**
-- No quotes around values
-- Restart dev server after changing `.env.local`
-- Clear browser cache if issues persist
+---
 
-### Troubleshooting
-If you encounter "Invalid API Key" or login/registration errors:
-1. See `SETUP_GUIDE.md` for complete setup instructions
-2. See `TROUBLESHOOTING.md` for common issues and solutions
-3. Run `node verify-supabase.js` to test your Supabase connection
-4. Check browser console (F12) for detailed error messages
+## 5. Supabase Setup
 
-### Quick Test
-To verify your Supabase setup is working:
+Create a Supabase project and configure the required environment.
+
+Run database migrations:
+
+```bash
+supabase db push
+```
+
+Set the required Supabase secrets:
+
+```bash
+supabase secrets set OPENCV_SERVICE_URL=http://localhost:8000
+supabase secrets set LOVABLE_API_KEY=your_api_key
+```
+
+Deploy the Edge Functions:
+
+```bash
+supabase functions deploy analyze-water-image
+```
+
+```bash
+supabase functions deploy predict-disease
+```
+
+```bash
+supabase functions deploy predict-risk
+```
+
+---
+
+# 🧪 Testing
+
+The project includes tools and documentation for testing and troubleshooting.
+
+To verify the Supabase connection:
+
 ```bash
 node verify-supabase.js
 ```
 
-Expected output: `✅ All tests passed!`
+Expected result:
+
+```text
+✅ All tests passed!
+```
+
+For setup and troubleshooting, refer to:
+
+```text
+SETUP_GUIDE.md
+TROUBLESHOOTING.md
+ML_PREDICTION_GUIDE.md
+```
+
+---
+
+# 🏃 Running the Complete Application
+
+For local development, start the services in the following order.
+
+### Step 1 — Start OpenCV
+
+```bash
+cd backend/opencv
+python opencv_analyzer.py
+```
+
+### Step 2 — Start the Frontend
+
+Open another terminal:
+
+```bash
+npm run dev
+```
+
+### Step 3 — Access the Application
+
+Open the frontend in your browser:
+
+```text
+http://localhost:8080
+```
+
+---
+
+# 📈 Application Capabilities
+
+The system provides an integrated platform for:
+
+```text
+Health Reporting
+       +
+Water Image Analysis
+       +
+Computer Vision
+       +
+Machine Learning
+       +
+Risk Assessment
+       +
+Geographical Visualization
+       +
+Health Trend Analysis
+       ↓
+Early Warning Support
+```
+
+---
+
+# 📚 Documentation
+
+Additional technical documentation is available in the repository:
+
+- **Backend Documentation** → `backend/README.md`
+- **ML Documentation** → `backend/ml/README.md`
+- **OpenCV Documentation** → `backend/opencv/README.md`
+- **Setup Guide** → `SETUP_GUIDE.md`
+- **Troubleshooting Guide** → `TROUBLESHOOTING.md`
+- **ML Prediction Guide** → `ML_PREDICTION_GUIDE.md`
+
+---
+
+# 🚀 Future Enhancements
+
+Potential future improvements include:
+
+- Real-time outbreak alerts
+- Improved disease prediction models
+- Advanced water-quality prediction
+- Mobile application
+- Automated health-worker notifications
+- Larger and more diverse training datasets
+- Cloud deployment of ML services
+- Cloud deployment of OpenCV services
+- More advanced health trend analysis
+
+---
+
+# 🔐 Security
+
+Security is an important part of the application.
+
+### Environment Variables
+
+Sensitive credentials should be stored using environment variables rather than committed to the repository.
+
+Never commit:
+
+```text
+API keys
+Service-role keys
+Private credentials
+Passwords
+Authentication secrets
+```
+
+Use:
+
+```text
+.env
+.env.local
+```
+
+and ensure sensitive files are included in `.gitignore`.
+
+---
+
+# ⚠️ Important Setup Notes
+
+If you encounter:
+
+```text
+Invalid API Key
+```
+
+or:
+
+```text
+Failed to fetch
+```
+
+check the following:
+
+1. Verify your Supabase URL.
+2. Verify your Supabase anonymous key.
+3. Make sure the environment file is configured correctly.
+4. Restart the development server.
+5. Check the browser console using `F12`.
+6. Verify that the required Supabase services are configured.
+7. Refer to `SETUP_GUIDE.md`.
+8. Refer to `TROUBLESHOOTING.md`.
+
+---
+
+# 🌟 Project Highlights
+
+### Artificial Intelligence
+
+Uses **Google Gemini 2.5 Flash** for water-image validation and analysis.
+
+### Machine Learning
+
+Uses a **Random Forest Classifier** for symptom-based disease prediction.
+
+### Computer Vision
+
+Uses **OpenCV** for water-quality image analysis.
+
+### Full-Stack Development
+
+Combines:
+
+```text
+React + TypeScript
+        +
+Python + Flask
+        +
+Supabase
+        +
+Machine Learning
+        +
+Computer Vision
+```
+
+into a single health-monitoring platform.
+
+---
+
+# 👥 Intended Users
+
+### Villagers
+
+- Report health issues
+- Submit symptoms
+- Provide location information
+- Upload water sample images
+
+### Health Workers
+
+- Monitor health reports
+- Review disease predictions
+- Analyze water-quality information
+- View risk levels
+- Analyze trends
+- Provide safety advice
+
+---
+
+# 📌 Project Summary
+
+The **AI-Based Early Warning System for Water-Borne Diseases** integrates health reporting, artificial intelligence, machine learning, computer vision, risk assessment, and geographical visualization to support early identification and monitoring of potential water-borne disease risks in village communities.
+
+The platform provides a centralized environment where **villagers can report health concerns and health workers can analyze the collected information to support monitoring and early response**.
+
+---
+
+## 📄 License
+
+This project is developed as an academic/project implementation of an AI-based early warning system for water-borne disease monitoring.
