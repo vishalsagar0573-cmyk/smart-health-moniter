@@ -23,5 +23,6 @@ export const getAutoAdvice = (riskLevel: string): string[] => {
     ]
   };
 
+  if (!riskLevel) return adviceMap.safe;
   return adviceMap[riskLevel.toLowerCase()] || adviceMap.safe;
 };

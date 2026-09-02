@@ -37,12 +37,18 @@ def validate_dataset(df):
     if missing.any():
         issues.append(f"Missing values found: {missing[missing > 0].to_dict()}")
     
-    # Check for invalid symptom values (should be 0 or 1)
-    symptom_cols = [col for col in df.columns if col != 'disease_id']
+    # Check for invalid symptom values (should be 0 or 1, except symptom_count)
+    symptom_cols = [col for col in df.columns if col not in ['disease_id', 'symptom_count']]
     for col in symptom_cols:
         invalid = df[~df[col].isin([0, 1])]
         if len(invalid) > 0:
             issues.append(f"Invalid values in {col}: {invalid[col].unique()}")
+    
+    # Check symptom_count separately (should be 0-14)
+    if 'symptom_count' in df.columns:
+        invalid_count = df[(df['symptom_count'] < 0) | (df['symptom_count'] > 14)]
+        if len(invalid_count) > 0:
+            issues.append(f"Invalid symptom_count values: {invalid_count['symptom_count'].unique()}")
     
     # Check disease_id range
     if df['disease_id'].min() < 0 or df['disease_id'].max() > 7:

@@ -2,432 +2,395 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { LogOut, Droplets, ThermometerSun, Activity, AlertTriangle, CheckCircle2, Info, MessageSquare, Upload, Camera, Trash2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { getAutoAdvice } from "@/utils/adviceTemplates";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-
-interface HealthReport {
-  id: string;
-  village_name: string;
-  report_date: string;
-  fever_cases: number;
-  diarrhea_cases: number;
-  vomiting_cases: number;
-  water_ph: number;
-  water_turbidity: number;
-  alert_level: string;
-  alert_message: string;
-  water_image_url?: string;
-  symptoms?: string[];
-  people_affected?: number;
-  predicted_disease?: string;
-  disease_risk_level?: string;
-  disease_advice?: string;
-  possible_organism?: string;
-  health_advice?: string;
-}
+  Activity, CheckCircle2, ChevronRight, Upload, MapPin,
+  AlertTriangle, Droplets, Thermometer, FileText,
+  AlertCircle, Info, Camera, RefreshCw, MessageSquarePlus, Loader2,
+  Zap, Brain, Eye, Sun, Wind, User, Maximize, Flame, Frown, BatteryWarning,
+  Beaker, GripHorizontal, LucideIcon, Feather, Expand, TrendingDown, Tent
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { getPossibleOrganisms } from "@/utils/biologyUtils";
+import { translations, Language } from "@/utils/translations";
 
 const VillagerDashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [userId, setUserId] = useState<string>("");
+  const [userName, setUserName] = useState("User");
   const [loading, setLoading] = useState(false);
-  const [reports, setReports] = useState<HealthReport[]>([]);
-  const [villageAdvice, setVillageAdvice] = useState<any[]>([]);
-  const [locationEnabled, setLocationEnabled] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [analyzingImage, setAnalyzingImage] = useState(false);
-  const [imageValidated, setImageValidated] = useState(false);
-  const [formData, setFormData] = useState({
-    village_name: "",
-    water_ph: 7.0,
-    water_turbidity: 1.0,
-  });
-  const [hasIllness, setHasIllness] = useState<boolean>(false);
-  const [symptoms, setSymptoms] = useState<string[]>([]);
-  const [peopleAffected, setPeopleAffected] = useState<number>(1);
-  const [otherSymptom, setOtherSymptom] = useState<string>("");
-  const [diseasePreview, setDiseasePreview] = useState<{
-    disease: string;
-    riskLevel: string;
-    advice: string;
-  } | null>(null);
-  const [deleteReportId, setDeleteReportId] = useState<string | null>(null);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [reports, setReports] = useState<any[]>([]);
+  const [step, setStep] = useState(1);
+  const [lang, setLang] = useState<Language>(() => (localStorage.getItem('app_lang') as Language) || 'en');
+  const t = translations[lang];
 
   useEffect(() => {
-    fetchCurrentUser();
-    fetchMyReports();
-    fetchVillageAdvice();
-  }, []);
+    localStorage.setItem('app_lang', lang);
+  }, [lang]);
 
-  const fetchCurrentUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) setUserId(user.id);
+  const getDiseaseKey = (name: string) => {
+    if (!name) return "";
+    if (name.includes("Malaria")) return "malaria";
+    if (name.includes("Dengue")) return "dengue";
+    if (name.includes("Cholera")) return "cholera";
+    if (name.includes("Typhoid")) return "typhoid";
+    if (name.includes("Hepatitis")) return "hepatitis";
+    if (name.includes("Dysentery")) return "dysentery";
+    if (name.includes("Gastritis")) return "gastritis";
+    if (name.includes("Food Poisoning")) return "food_poisoning";
+    if (name.includes("Flu")) return "flu";
+    if (name.includes("Skin")) return "skin_inf";
+    if (name.includes("Respiratory")) return "resp_inf";
+    if (name.includes("Gastroenteritis")) return "acute_gastro";
+    if (name.includes("Viral Fever")) return "viral_fever";
+    if (name.includes("Diarrheal")) return "mild_diarrhea";
+    if (name.includes("General Health")) return "gen_health";
+    if (name.includes("General Viral") || name.includes("Infection")) return "general_viral";
+    if (name.includes("No Symptoms")) return "no_symptoms";
+    return "";
   };
 
-  const fetchMyReports = async () => {
+  // Form Data
+  const [formData, setFormData] = useState({
+    village_name: "",
+    hasIllness: true,
+    symptoms: [] as string[],
+    otherSymptom: "",
+    peopleAffected: 0, // Default to 0 as requested
+    waterImage: null as File | null,
+    imagePreview: null as string | null,
+    ph: "" as string | number,
+    turbidity: "" as string | number,
+    waterAdvice: "",
+    waterRisk: "",
+    location: null as { lat: number; lng: number } | null,
+    diseasePrediction: null as any
+  });
+
+  useEffect(() => {
+    fetchUser();
+    fetchReports();
+  }, []);
+
+  const fetchUser = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase.from("profiles").select("full_name").eq("id", user.id).single();
+      if (data) setUserName(data.full_name || "User");
+    }
+  };
+
+  const fetchReports = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-
-    const { data } = await supabase
-      .from("health_reports")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(5);
-
+    const { data } = await supabase.from("health_reports").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(5);
     if (data) setReports(data);
   };
 
-  const fetchVillageAdvice = async () => {
-    const { data } = await supabase
-      .from("village_advice")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (data) setVillageAdvice(data);
+  const toggleSymptom = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      symptoms: prev.symptoms.includes(id)
+        ? prev.symptoms.filter(s => s !== id)
+        : [...prev.symptoms, id]
+    }));
   };
 
-  const toggleSymptom = (symptom: string) => {
-    setSymptoms(prev => 
-      prev.includes(symptom) 
-        ? prev.filter(s => s !== symptom)
-        : [...prev, symptom]
-    );
-  };
-
-  const predictDisease = async (selectedSymptoms: string[]) => {
-    if (selectedSymptoms.length === 0 && !otherSymptom) return null;
-
-    try {
-      const allSymptoms = otherSymptom 
-        ? [...selectedSymptoms, `other: ${otherSymptom}`]
-        : selectedSymptoms;
-
-      const { data: prediction, error } = await supabase.functions.invoke('predict-disease', {
-        body: { symptoms: allSymptoms }
-      });
-
-      if (error) throw error;
-      return prediction.prediction;
-    } catch (error) {
-      console.error('Disease prediction error:', error);
-      return {
-        disease: "Unable to Predict",
-        risk_level: "Moderate",
-        advice: "⚠️ Please consult with a health worker for proper diagnosis.",
-        confidence: 0.5,
-      };
-    }
-  };
-
-  const predictRisk = async (data: typeof formData, diseasePrediction: any = null) => {
-    try {
-      const { data: prediction, error } = await supabase.functions.invoke('predict-risk', {
-        body: {
-          fever: symptoms.includes('fever') ? peopleAffected : 0,
-          diarrhea: symptoms.includes('diarrhea') ? peopleAffected : 0,
-          vomiting: symptoms.includes('vomiting') ? peopleAffected : 0,
-          pH: data.water_ph,
-          turbidity: data.water_turbidity,
-          predictedDisease: diseasePrediction?.disease || 'None',
-        }
-      });
-
-      if (error) throw error;
-      return prediction;
-    } catch (error) {
-      console.error('Prediction error:', error);
-      // Fallback to simple logic
-      if (symptoms.length > 3 && data.water_ph < 6.5) {
-        return {
-          alert_level: "high",
-          alert_message: "⚠️ High Risk of Water-Borne Disease",
-        };
-      }
-      return {
-        alert_level: "safe",
-        alert_message: "✅ Safe Zone",
-      };
-    }
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload an image file",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Reset validation status when new image is uploaded
-    setImageValidated(false);
-    setUploadedImage(file);
-    
-    // Create preview
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setImagePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-
-    // Analyze image (includes validation)
-    await analyzeImage(file);
+    const previewUrl = URL.createObjectURL(file);
+    setFormData(prev => ({
+      ...prev,
+      waterImage: file,
+      imagePreview: previewUrl,
+      ph: "",
+      turbidity: ""
+    }));
   };
 
-  const analyzeImage = async (file: File) => {
-    setAnalyzingImage(true);
+  const analyzeImage = async () => {
+    if (!formData.waterImage) return;
+
+    setIsAnalyzing(true);
+    toast({ title: "Analyzing Water Quality...", description: "Uploading image and processing..." });
 
     try {
-      // Upload to Supabase Storage
-      const fileName = `${userId}_${Date.now()}_${file.name}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('water-samples')
-        .upload(fileName, file);
+      const file = formData.waterImage;
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+      const filePath = `${fileName}`;
 
-      if (uploadError) throw uploadError;
+      const { error: uploadError } = await supabase.storage
+        .from('water_images')
+        .upload(filePath, file);
 
-      // Get public URL
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
       const { data: { publicUrl } } = supabase.storage
-        .from('water-samples')
-        .getPublicUrl(fileName);
+        .from('water_images')
+        .getPublicUrl(filePath);
 
-      // Analyze with AI (includes validation)
-      const { data: analysis, error: analysisError } = await supabase.functions.invoke(
-        'analyze-water-image',
-        {
-          body: { imageUrl: publicUrl }
-        }
-      );
+      const response = await fetch('http://localhost:8000/analyze-water', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: publicUrl })
+      });
 
-      if (analysisError) throw analysisError;
+      const data = await response.json();
 
-      // Check if image validation failed
-      if (analysis.is_valid === false || (!analysis.success && analysis.error)) {
-        // Clear the uploaded image and preview
-        setUploadedImage(null);
-        setImagePreview(null);
-        setImageValidated(false);
-        
-        // Show validation error message
-        toast({
-          title: "Invalid Image",
-          description: analysis.error || "Image is not a valid water sample. Report not submitted. Please upload a photo of water in a white cup/bottle.",
-          variant: "destructive",
-        });
-        return;
+      if (!response.ok || data.error) {
+        throw new Error(data.message || "Failed to analyze image");
       }
 
-      if (analysis.success) {
-        setImageValidated(true);
-        setFormData(prev => ({
-          ...prev,
-          water_ph: parseFloat(analysis.water_ph.toFixed(1)),
-          water_turbidity: parseFloat(analysis.water_turbidity.toFixed(2)),
-        }));
+      setFormData(prev => ({
+        ...prev,
+        ph: data.ph,
+        turbidity: data.turbidity,
+        waterAdvice: data.advice,
+        waterRisk: data.water_safety || data.water_quality
+      }));
 
-        toast({
-          title: "Image analyzed successfully!",
-          description: `pH: ${analysis.water_ph.toFixed(1)}, Turbidity: ${analysis.water_turbidity.toFixed(2)} NTU - ${analysis.analysis || "Water quality metrics extracted"}`,
-        });
-      } else {
-        setImageValidated(false);
-        throw new Error(analysis.error || "Analysis failed");
-      }
-    } catch (error: any) {
-      console.error('Image analysis error:', error);
-      // Clear the uploaded image and preview on error
-      setUploadedImage(null);
-      setImagePreview(null);
-      setImageValidated(false);
-      
       toast({
-        title: "Image analysis failed",
-        description: error.message || "Please enter water quality values manually",
-        variant: "destructive",
+        title: "Water Analysis Successful",
+        description: `pH: ${data.ph} | Turbidity: ${data.turbidity} NTU. ${data.advice}`,
+        className: "bg-green-50 border-green-200 text-green-800 border-l-4"
+      });
+
+    } catch (error: any) {
+      console.error("Analysis Error:", error);
+      toast({
+        title: "Image Analysis Failed",
+        description: error.message || "Could not analyze the image. Is it a clear water photo?",
+        variant: "destructive"
       });
     } finally {
-      setAnalyzingImage(false);
+      setIsAnalyzing(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setLoading(true);
 
-    // Validate image if uploaded - ensure it was successfully validated
-    if (uploadedImage && imagePreview) {
-      // If image hasn't been validated, prevent submission
-      if (!imageValidated) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        toast({ title: "Error", description: "You must be logged in to submit a report", variant: "destructive" });
         setLoading(false);
-        toast({
-          title: "Invalid Image",
-          description: "Image is not a valid water sample. Report not submitted. Please upload a photo of water in a white cup/bottle.",
-          variant: "destructive",
-        });
         return;
       }
-    }
 
-    // Get disease prediction if symptoms are present
-    let diseasePrediction = null;
-    if (hasIllness && symptoms.length > 0) {
-      diseasePrediction = await predictDisease(symptoms);
-    }
+      // Prepare payload
+      const payload = {
+        user_id: user.id,
+        village_name: formData.village_name,
+        // report_date removed as it does not exist in the schema
+        water_ph: typeof formData.ph === 'number' ? formData.ph : parseFloat(formData.ph as string) || 0,
+        water_turbidity: typeof formData.turbidity === 'number' ? formData.turbidity : parseFloat(formData.turbidity as string) || 0,
+        symptoms: formData.symptoms,
+        people_affected: formData.peopleAffected,
+        predicted_disease: formData.diseasePrediction?.disease || "Pending Analysis",
+        disease_risk_level: formData.diseasePrediction?.risk || "Unknown",
+        disease_advice: formData.diseasePrediction?.advice || "Please consult a doctor.",
+        // Default values for required fields if they exist as not null constraints
+        fever_cases: formData.symptoms.includes('fever') ? 1 : 0,
+        diarrhea_cases: formData.symptoms.includes('diarrhea') ? 1 : 0,
+        vomiting_cases: formData.symptoms.includes('vomiting') ? 1 : 0,
+        alert_level: formData.diseasePrediction?.risk || "Moderate",
+        alert_message: "Report submitted by villager",
+        // submitter_name removed as it does not exist in the schema
+        latitude: formData.location?.lat || null,
+        longitude: formData.location?.lng || null
+      };
 
-    // Get risk prediction based on water quality, symptoms, AND predicted disease
-    const prediction = await predictRisk(formData, diseasePrediction);
+      const { error } = await supabase
+        .from("health_reports")
+        .insert([payload]);
 
-    const allSymptoms = otherSymptom 
-      ? [...symptoms, `other: ${otherSymptom}`]
-      : symptoms;
+      if (error) throw error;
 
-    const reportData: any = {
-      user_id: userId,
-      ...formData,
-      fever_cases: symptoms.includes('fever') ? peopleAffected : 0,
-      diarrhea_cases: symptoms.includes('diarrhea') ? peopleAffected : 0,
-      vomiting_cases: symptoms.includes('vomiting') ? peopleAffected : 0,
-      symptoms: hasIllness ? allSymptoms : [],
-      people_affected: hasIllness ? peopleAffected : 0,
-      predicted_disease: diseasePrediction?.disease || null,
-      disease_risk_level: diseasePrediction?.risk_level || null,
-      disease_advice: diseasePrediction?.advice || null,
-      alert_level: prediction.alert_level,
-      alert_message: prediction.alert_message,
-      possible_organism: prediction.possible_organism || null,
-      health_advice: prediction.health_advice || null,
-    };
+      await fetchReports();
+      setStep(3); // Move to a "Success" step or reset
 
-    // Add location if enabled
-    if (locationEnabled && currentLocation) {
-      reportData.latitude = currentLocation.lat;
-      reportData.longitude = currentLocation.lng;
-      reportData.location_timestamp = new Date().toISOString();
-    }
-
-    // Add image URL if uploaded (image is already validated at this point)
-    if (uploadedImage && imagePreview) {
-      const fileName = `${userId}_${Date.now()}_${uploadedImage.name}`;
-      const { data: uploadData } = await supabase.storage
-        .from('water-samples')
-        .upload(fileName, uploadedImage);
-      
-      if (uploadData) {
-        const { data: { publicUrl } } = supabase.storage
-          .from('water-samples')
-          .getPublicUrl(fileName);
-        reportData.water_image_url = publicUrl;
-      }
-    }
-
-    let { error } = await supabase.from("health_reports").insert(reportData);
-
-    setLoading(false);
-
-    if (error) {
-      const message = error.message || "";
-      const schemaColumnMissing =
-        message.includes("health_advice") ||
-        message.includes("possible_organism") ||
-        message.includes("schema cache");
-
-      if (schemaColumnMissing) {
-        // Retry without new columns so submission still succeeds before migration is applied
-        const { possible_organism, health_advice, ...fallbackData } = reportData;
-        const retry = await supabase.from("health_reports").insert(fallbackData);
-        if (retry.error) {
-          toast({
-            title: "Error submitting report",
-            description: retry.error.message,
-            variant: "destructive",
-          });
-          return;
-        }
-        toast({
-          title: "Report submitted (without biology info)",
-          description:
-            "Database migration not applied yet. Please run the migration to store Possible Organism and Health Advice.",
-        });
-        fetchMyReports();
-        // Reset form
-        setFormData({
-          village_name: "",
-          water_ph: 7.0,
-          water_turbidity: 1.0,
-        });
-        setHasIllness(false);
-        setSymptoms([]);
-        setPeopleAffected(1);
-        setOtherSymptom("");
-        setDiseasePreview(null);
-        setUploadedImage(null);
-        setImagePreview(null);
-        setImageValidated(false);
-        setLocationEnabled(false);
-        setCurrentLocation(null);
-        return;
-      } else {
-        toast({
-          title: "Error submitting report",
-          description: message,
-          variant: "destructive",
-        });
-      }
-    } else {
-      let description = prediction.alert_message;
-      if (diseasePrediction) {
-        description = `${diseasePrediction.disease} (${diseasePrediction.risk_level} Risk)\n\n${diseasePrediction.advice}`;
-      }
-
-      toast({
-        title: "Report submitted successfully!",
-        description: description,
-        variant: diseasePrediction?.risk_level === "High" || prediction.alert_level === "high" ? "destructive" : "default",
-      });
-      fetchMyReports();
-      // Reset form
+      // Reset form (keeping it simple for now, maybe redirect to list)
       setFormData({
         village_name: "",
-        water_ph: 7.0,
-        water_turbidity: 1.0,
+        hasIllness: true,
+        symptoms: [],
+        otherSymptom: "",
+        peopleAffected: 1,
+        waterImage: null,
+        imagePreview: null,
+        ph: "",
+        turbidity: "",
+        waterAdvice: "",
+        waterRisk: "",
+        location: null,
+        diseasePrediction: null
       });
-      setHasIllness(false);
-      setSymptoms([]);
-      setPeopleAffected(1);
-      setOtherSymptom("");
-      setDiseasePreview(null);
-      setUploadedImage(null);
-      setImagePreview(null);
-      setImageValidated(false);
-      setLocationEnabled(false);
-      setCurrentLocation(null);
+
+      toast({ title: "Report Submitted Successfully", description: "Your health report has been recorded." });
+
+    } catch (error: any) {
+      toast({ title: "Submission Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handlePreviewPrediction = async () => {
+    // Advanced Scoring-Based Prediction Logic
+    const s = formData.symptoms;
+    const has = (id: string) => s.includes(id);
+
+    // Define Disease Profiles with scoring weights
+    const diseases = [
+      {
+        name: "Malaria",
+        risk: "High",
+        symptoms: ['fever', 'headache', 'body_pain', 'vomiting', 'weakness'],
+        required: ['fever'],
+        advice: "Urgent: Test for Malaria/Dengue. Use mosquito nets. Take paracetamol for fever (avoid aspirin)."
+      },
+      {
+        name: "Dengue",
+        risk: "High",
+        symptoms: ['fever', 'rashes', 'body_pain', 'headache', 'weakness'],
+        required: ['fever'],
+        // Bonus logic: Rashes is a strong indicator
+        advice: "Check platelet count. Hydrate well. Watch for bleeding gums."
+      },
+      {
+        name: "Cholera",
+        risk: "High",
+        symptoms: ['diarrhea', 'dehydration', 'vomiting', 'weakness'],
+        required: ['diarrhea', 'dehydration'],
+        advice: "Critical: Rehydrate immediately with ORS. Seek hospital care if symptoms persist > 24hrs."
+      },
+      {
+        name: "Typhoid",
+        risk: "Moderate",
+        symptoms: ['fever', 'stomach_pain', 'headache', 'weakness'],
+        required: ['fever', 'stomach_pain'],
+        advice: "Consult doctor for blood culture/Widal test. Drink boiled water and eat cooked soft food."
+      },
+      {
+        name: "Hepatitis / Jaundice",
+        risk: "Moderate",
+        symptoms: ['jaundice', 'dark_urine', 'nausea', 'stomach_pain', 'weakness'],
+        required: [], // Custom check below
+        advice: "Avoid oily/spicy food. Rest completely. Drink plenty of sugarcane juice or glucose water."
+      },
+      {
+        name: "Dysentery",
+        risk: "High",
+        symptoms: ['blood_stool', 'stomach_pain', 'diarrhea', 'fever'],
+        required: ['blood_stool'],
+        advice: "Seek medical help immediately. Requires stool test and antibiotics."
+      },
+      {
+        name: "Acute Diarrhea / Gastritis",
+        risk: "Moderate",
+        symptoms: ['diarrhea', 'stomach_pain', 'nausea', 'headache', 'weakness'],
+        required: ['diarrhea'],
+        advice: "Hydrate with ORS/fluids. Eat light foods (bananas, rice, toast). Consult doctor if it lasts > 2 days."
+      },
+      {
+        name: "Gastroenteritis / Food Poisoning",
+        risk: "Moderate",
+        symptoms: ['vomiting', 'stomach_pain', 'diarrhea', 'nausea', 'fever'],
+        required: ['vomiting'],
+        advice: "Hydrate with ORS. Avoid solid foods for a few hours. Consult a doctor if vomiting persists."
+      },
+      {
+        name: "Respiratory Infection / Flu",
+        risk: "Moderate",
+        symptoms: ['cough', 'fever', 'headache', 'weakness', 'body_pain'],
+        required: ['cough'],
+        advice: "Isolate if possible. Wear mask. Steam inhalation may help."
+      }
+    ];
+
+    // Calculate Scores
+    let bestMatch = {
+      disease: "General Viral/New Infection",
+      risk: "Low",
+      score: 0,
+      advice: "Monitor symptoms closely. specific diagnosis requires more data. Stay hydrated."
+    };
+
+    diseases.forEach(d => {
+      let score = 0;
+
+      // 1. Check Requirements
+      const meetsRequirements = d.required.length > 0 ? d.required.every(req => has(req)) : false;
+
+      // Special check for Jaundice (logical OR for key symptoms)
+      const matchesJaundice = d.name.includes("Hepatitis") && (has('jaundice') || has('dark_urine'));
+
+      // If it has no required fields (and isn't the special case), we might skip strict check, 
+      // but purely symptom matching might be too loose. 
+      // Let's enforce: EITHER meets strict requirements OR is the special Jaundice case.
+      // For Malaria/Dengue/Flu which share fever, requirements help distinguish.
+
+      if (meetsRequirements || matchesJaundice) {
+        // 2. Calculate Score based on matching symptoms
+        d.symptoms.forEach(sym => {
+          if (has(sym)) score += 1;
+        });
+
+        // 3. Weighting modifiers
+        if (d.name === "Dengue" && has('rashes')) score += 2; // Rashes strongly indicates Dengue over Malaria
+        if (d.name === "Cholera" && has('dehydration')) score += 2; // Dehydration is critical for Cholera
+        if (d.name === "Dysentery" && has('blood_stool')) score += 3; // Pathognomonic
+        if (d.name === "Hepatitis / Jaundice" && (has('jaundice') || has('dark_urine'))) score += 3; // Strong indicator
+        if (d.name === "Typhoid" && has("stomach_pain") && has("fever")) score += 1; // Combo bonus
+
+        // 4. Update Best Match
+        if (score > bestMatch.score) {
+          bestMatch = { disease: d.name, risk: d.risk, advice: d.advice, score };
+        }
+      }
+    });
+
+    // Fallback if score is too low but symptoms exist
+    if (bestMatch.score < 2 && s.length > 0) {
+      // Keep general if nothing matches strongly
+    } else if (s.length === 0) {
+      bestMatch = { disease: "No Symptoms Selected", risk: "None", advice: "Please select symptoms to get a prediction.", score: 0 };
+    }
+
+    // 5. Override for Severe Outbreak Risk based on affected people count
+    if (s.length > 3 && formData.peopleAffected > 15) {
+      bestMatch = {
+        disease: "Potential Severe Outbreak",
+        risk: "Severe",
+        score: 100,
+        advice: "CRITICAL ALERT: Very high number of affected people with multiple symptoms. Contact authorities immediately."
+      };
+    } else if (s.length === 3 && formData.peopleAffected >= 12) {
+      bestMatch = {
+        disease: "Potential Moderate Outbreak",
+        risk: "Moderate",
+        score: 99,
+        advice: "Warning: Significant number of affected people detected. Monitor situation closely and ensure clean water supply."
+      };
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      diseasePrediction: {
+        disease: bestMatch.disease,
+        risk: bestMatch.risk,
+        advice: bestMatch.advice
+      }
+    }));
   };
 
   const handleLogout = async () => {
@@ -435,716 +398,599 @@ const VillagerDashboard = () => {
     navigate("/auth");
   };
 
-  const handleDeleteReport = (reportId: string) => {
-    setDeleteReportId(reportId);
-    setShowDeleteDialog(true);
-  };
+  const symptomsList = [
+    { id: "diarrhea", label: "Frequent loose motion (diarrhea)", icon: <Droplets className="h-10 w-10" /> },
+    { id: "vomiting", label: "Vomiting", icon: <Frown className="h-10 w-10" /> },
+    { id: "fever", label: "High fever", icon: <Thermometer className="h-10 w-10" /> },
+    { id: "stomach_pain", label: "Stomach or abdominal pain", icon: <Flame className="h-10 w-10" /> },
+    { id: "nausea", label: "Nausea / loss of appetite", icon: <Frown className="h-10 w-10" /> },
+    { id: "weakness", label: "Weakness / tiredness", icon: <Feather className="h-10 w-10" /> },
+    { id: "headache", label: "Headache", icon: <Brain className="h-10 w-10" /> },
+    { id: "jaundice", label: "Yellow eyes or skin (Jaundice)", icon: <Eye className="h-10 w-10" /> },
+    { id: "dark_urine", label: "Dark yellow urine", icon: <Beaker className="h-10 w-10" /> },
+    { id: "dehydration", label: "Dehydration (dry mouth, less urination)", icon: <Sun className="h-10 w-10" /> },
+    { id: "rashes", label: "Itchy skin / rashes", icon: <GripHorizontal className="h-10 w-10" /> },
+    { id: "body_pain", label: "Body pain", icon: <User className="h-10 w-10" /> },
+    { id: "swelling", label: "Swelling in legs or abdomen", icon: <Expand className="h-10 w-10" /> },
+    { id: "blood_stool", label: "Blood in stool", icon: <Droplets className="h-10 w-10 text-red-500" /> },
+    { id: "cough", label: "Persistent cough", icon: <Wind className="h-10 w-10" /> },
+  ];
 
-  const confirmDeleteReport = async () => {
-    if (!deleteReportId || !userId) return;
-    setDeleting(true);
-    try {
-      const { error } = await supabase
-        .from("health_reports")
-        .delete()
-        .eq("id", deleteReportId)
-        .eq("user_id", userId);
-
-      if (error) {
-        toast({
-          title: "Error deleting report",
-          description: error.message || "Failed to delete your report. Please try again.",
-          variant: "destructive",
-        });
-        setDeleting(false);
-        return;
-      }
-
-      toast({
-        title: "Report deleted",
-        description: "Your report has been removed successfully.",
-      });
-      await fetchMyReports();
-      setShowDeleteDialog(false);
-      setDeleteReportId(null);
-    } catch (err: any) {
-      toast({
-        title: "Error deleting report",
-        description: err.message || "An unexpected error occurred.",
-        variant: "destructive",
-      });
-    } finally {
-      setDeleting(false);
-    }
+  const getWaterRisk = (ph: any, turb: any) => {
+    if (!ph || !turb) return "Unknown";
+    if (ph >= 6.5 && ph <= 8.5 && turb < 5) return "Safe";
+    return "Unsafe";
   };
 
   const handleGetLocation = () => {
     if (!navigator.geolocation) {
       toast({
-        title: "Geolocation not supported",
-        description: "Your browser doesn't support location services",
-        variant: "destructive",
+        title: "Error",
+        description: "Geolocation is not supported by your browser",
+        variant: "destructive"
       });
       return;
     }
 
-    setLoading(true);
+    toast({ title: "Locating...", description: "Fetching your current location..." });
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setCurrentLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        });
-        setLocationEnabled(true);
-        setLoading(false);
+        setFormData(prev => ({
+          ...prev,
+          location: {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          }
+        }));
         toast({
-          title: "Location captured",
-          description: "Your location will be included in the report",
+          title: "Location Found",
+          description: `Lat: ${position.coords.latitude.toFixed(4)}, Lng: ${position.coords.longitude.toFixed(4)}`,
+          className: "bg-green-50 text-green-800 border-green-200"
         });
       },
       (error) => {
-        setLoading(false);
+        console.error("Location Error:", error);
+        let msg = "Unable to retrieve your location.";
+        if (error.code === 1) msg = "Location permission denied.";
+        if (error.code === 2) msg = "Location unavailable.";
+        if (error.code === 3) msg = "Location request timed out.";
+
         toast({
-          title: "Location error",
-          description: "Unable to get your location. Please try again.",
-          variant: "destructive",
+          title: "Location Failed",
+          description: msg,
+          variant: "destructive"
         });
       }
     );
   };
 
+
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5">
-      <header className="border-b bg-gradient-to-r from-card via-card to-primary/5 shadow-medical sticky top-0 z-10 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-5 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold gradient-medical-text">Villager Dashboard</h1>
-            <p className="text-sm text-muted-foreground mt-1">Report Your Health Data & Water Quality</p>
+    <div className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-indigo-100 pb-20 font-sans text-slate-900">
+      {/* Header */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-indigo-100 sticky top-0 z-30 shadow-sm transition-all duration-300">
+        <div className="container mx-auto px-4 h-24 flex items-center justify-between">
+          <h1 className="text-xl md:text-3xl font-serif font-normal text-slate-800 flex items-center gap-3 tracking-wide">
+            <div className="p-2 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-300">
+              <Activity className="h-7 w-7" />
+            </div>
+            {t.dashboardTitle}
+          </h1>
+          <div className="flex items-center gap-4">
+            <div className="hidden md:flex items-center gap-1 mr-4 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm">
+              {(['en', 'hi', 'kn', 'te'] as Language[]).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setLang(l)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${lang === l ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-blue-600 hover:bg-slate-50'}`}
+                >
+                  {l === 'en' ? 'EN' : l === 'hi' ? 'हिंदी' : l === 'kn' ? 'ಕನ್ನಡ' : 'తెలుగు'}
+                </button>
+              ))}
+            </div>
+            <span className="text-lg font-bold text-slate-700 hidden sm:inline-flex items-center gap-3 bg-white px-6 py-3 rounded-full border border-slate-200 shadow-sm h-14">
+              <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse shadow-green-500/50 shadow-sm"></div>
+              {userName}
+            </span>
+            <Button variant="ghost" size="lg" onClick={handleLogout} className="text-slate-600 hover:text-white hover:bg-red-500 font-bold transition-all rounded-xl px-8 h-14 text-lg border-2 border-slate-100 hover:border-red-500">
+              {t.logout}
+            </Button>
           </div>
-          <Button onClick={handleLogout} variant="outline" className="gap-2 shadow-sm hover:shadow-md transition-all">
-            <LogOut className="h-4 w-4" />
-            Logout
-          </Button>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* Health Tips */}
-        <Alert className="mb-8 border-secondary/50 bg-gradient-to-r from-secondary/10 to-secondary/5 shadow-medical animate-fade-in">
-          <Info className="h-5 w-5 text-secondary" />
-          <AlertTitle className="text-secondary text-lg font-semibold">Health Tips for Safe Living</AlertTitle>
-          <AlertDescription>
-            <ul className="mt-3 list-disc list-inside space-y-2 text-sm">
-              <li>Always boil drinking water for at least 20 minutes</li>
-              <li>Wash hands regularly with soap before eating</li>
-              <li>Maintain proper sanitation around your home</li>
-              <li>Report any unusual symptoms immediately</li>
-            </ul>
-          </AlertDescription>
-        </Alert>
+      <div className="container mx-auto px-4 py-8 max-w-4xl">
 
-        {/* Data Entry Form */}
-        <Card className="mb-8 shadow-medical-lg border-primary/20 card-hover animate-fade-in">
-          <CardHeader className="bg-gradient-to-r from-primary/5 to-secondary/5 border-b">
-            <CardTitle className="flex items-center gap-3 text-xl">
-              <div className="p-2 bg-primary/20 rounded-lg">
-                <Activity className="h-5 w-5 text-primary" />
+        {/* Main Form Card */}
+        <Card className="bg-white/90 backdrop-blur-sm border-0 shadow-xl shadow-blue-900/5 mb-8 overflow-hidden rounded-2xl ring-1 ring-black/5">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-700 border-b border-indigo-500 p-6 pb-6 text-white">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-inner border border-white/20">
+                  <Activity className="h-7 w-7" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-extrabold text-white tracking-tight">{t.submitReportTitle}</h2>
+                  <p className="text-blue-100 font-medium">{t.submitReportDesc}</p>
+                </div>
               </div>
-              Submit Health & Water Quality Report
-            </CardTitle>
-            <CardDescription className="text-base mt-2">
-              Enter the health data and water quality information for your village
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="village_name">Village Name *</Label>
-                <Input
-                  id="village_name"
-                  value={formData.village_name}
-                  onChange={(e) => setFormData({ ...formData, village_name: e.target.value })}
-                  required
-                  placeholder="Enter your village name"
-                />
-              </div>
+            </div>
 
-              {/* Illness Section */}
-              <div className="border rounded-lg p-4 space-y-4 bg-card">
-                <Label className="text-base font-semibold">Any illness observed in the last 7 days?</Label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="hasIllness"
-                      checked={hasIllness === true}
-                      onChange={() => setHasIllness(true)}
-                      className="w-4 h-4"
-                    />
-                    <span>Yes</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="hasIllness"
-                      checked={hasIllness === false}
-                      onChange={() => {
-                        setHasIllness(false);
-                        setSymptoms([]);
-                        setPeopleAffected(1);
-                        setOtherSymptom("");
-                      }}
-                      className="w-4 h-4"
-                    />
-                    <span>No</span>
-                  </label>
+            {/* Modern Step Indicator */}
+            {/* Modern Step Indicator */}
+            <div className="flex justify-center mb-4">
+              <div className="flex items-center relative z-0">
+                {/* Progress Bar Background */}
+                <div className="absolute left-0 right-0 top-1/2 h-1 bg-white/20 -z-10 rounded-full"></div>
+                {/* Active Progress */}
+                <div className={`absolute left-0 top-1/2 h-1 bg-cyan-400 -z-10 rounded-full transition-all duration-500 ease-in-out shadow-[0_0_10px_rgba(34,211,238,0.5)]`} style={{ width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' }}></div>
+
+                {[1, 2, 3].map((s) => (
+                  <div key={s} className="flex items-center">
+                    <div className={`
+                        w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm border-4 transition-all duration-300 z-10
+                        ${step >= s
+                        ? 'bg-white text-blue-700 border-cyan-400 shadow-lg scale-110'
+                        : 'bg-blue-800/40 text-blue-200 border-blue-500/30 backdrop-blur-sm'}
+                    `}>
+                      {s === 3 && step === 3 ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : s}
+                    </div>
+                    {s < 3 && <div className="w-16 md:w-24"></div>} {/* Spacer */}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-between w-64 md:w-80 mx-auto text-xs font-semibold text-blue-100 mt-2 text-center pl-2">
+              <span>{t.date || "Details"}</span>
+              <span>{t.waterQuality || "Water"}</span>
+              <span>{t.diseaseRisk || "Result"}</span>
+            </div>
+          </div>
+
+          <CardContent className="p-6 md:p-8">
+            {/* Step 1: Health Details */}
+            {step === 1 && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="space-y-2">
+                  <Label className="text-slate-700 font-bold text-lg">{t.villageName}</Label>
+                  <Input
+                    value={formData.village_name}
+                    onChange={e => setFormData({ ...formData, village_name: e.target.value })}
+                    placeholder={t.villageNamePlaceholder}
+                    className="h-14 text-lg bg-slate-50 border-slate-200"
+                  />
                 </div>
 
-                {hasIllness && (
-                  <div className="space-y-4 pt-4 border-t">
-                    <div>
-                      <Label className="text-base font-semibold mb-3 block">Select all symptoms you've noticed:</Label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {[
-                          { id: "diarrhea", label: "Frequent loose motion (diarrhea)" },
-                          { id: "vomiting", label: "Vomiting" },
-                          { id: "fever", label: "High fever" },
-                          { id: "stomach_pain", label: "Stomach or abdominal pain" },
-                          { id: "nausea", label: "Nausea / loss of appetite", alt: "loss_appetite" },
-                          { id: "weakness", label: "Weakness / tiredness" },
-                          { id: "headache", label: "Headache" },
-                          { id: "jaundice", label: "Yellow eyes or skin (Jaundice)" },
-                          { id: "dark_urine", label: "Dark yellow urine" },
-                          { id: "dehydration", label: "Dehydration (dry mouth, less urination)" },
-                          { id: "rash", label: "Itchy skin / rashes" },
-                          { id: "body_pain", label: "Body pain" },
-                          { id: "swelling", label: "Swelling in legs or abdomen" },
-                          { id: "blood_stool", label: "Blood in stool" },
-                          { id: "cough", label: "Persistent cough" },
-                        ].map((symptom) => (
-                          <label key={symptom.id} className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-muted/50">
-                            <input
-                              type="checkbox"
-                              checked={symptoms.includes(symptom.alt || symptom.id)}
-                              onChange={() => toggleSymptom(symptom.alt || symptom.id)}
-                              className="w-4 h-4"
-                            />
-                            <span className="text-sm">{symptom.label}</span>
-                          </label>
-                        ))}
-                      </div>
+                <div className="space-y-2">
+                  <Label className="text-slate-700 font-bold text-lg">{t.illnessQuestion}</Label>
+                  <div className="flex gap-6 mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer p-2 border rounded-lg hover:bg-slate-50">
+                      <input type="radio" name="illness" className="w-6 h-6 text-blue-600" checked={formData.hasIllness} onChange={() => setFormData({ ...formData, hasIllness: true })} />
+                      <span className="font-bold text-lg">{t.yes}</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer p-2 border rounded-lg hover:bg-slate-50">
+                      <input type="radio" name="illness" className="w-6 h-6 text-blue-600" checked={!formData.hasIllness} onChange={() => setFormData({ ...formData, hasIllness: false })} />
+                      <span className="font-bold text-lg">{t.no}</span>
+                    </label>
+                  </div>
+                </div>
+
+                {formData.hasIllness && (
+                  <div className="space-y-3">
+                    <Label className="text-blue-600 font-semibold flex items-center gap-2">
+                      <Activity className="h-4 w-4" /> {t.selectSymptoms}
+                    </Label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {symptomsList.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => toggleSymptom(s.id)}
+                          className={`
+                                      group relative p-4 rounded-2xl border flex flex-col items-center justify-center text-center gap-4 transition-all duration-300 h-40
+                                      shadow-sm hover:shadow-lg hover:-translate-y-1
+                                      ${formData.symptoms.includes(s.id)
+                              ? 'border-transparent bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-blue-500/30 ring-2 ring-blue-500 ring-offset-2'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50'
+                            }
+                                   `}
+                        >
+                          {formData.symptoms.includes(s.id) && (
+                            <div className="absolute top-2 right-2 text-white animate-in zoom-in spin-in-90 duration-300">
+                              <CheckCircle2 className="h-6 w-6" />
+                            </div>
+                          )}
+                          <div className={`p-4 rounded-full transition-colors duration-300 ${formData.symptoms.includes(s.id) ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-500 group-hover:bg-white group-hover:text-blue-600 group-hover:shadow-md'}`}>
+                            {s.icon}
+                          </div>
+                          <span className="text-sm md:text-base font-semibold leading-tight">{t[('syp_' + s.id) as keyof typeof t] || s.label}</span>
+                        </button>
+                      ))}
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="other_symptom">Other (please specify):</Label>
+                    <div className="space-y-2 pt-4">
+                      <Label className="font-bold text-lg">{t.otherSymptom}</Label>
                       <Input
-                        id="other_symptom"
-                        placeholder="Describe any other symptoms..."
-                        value={otherSymptom}
-                        onChange={(e) => setOtherSymptom(e.target.value)}
+                        value={formData.otherSymptom}
+                        onChange={e => setFormData({ ...formData, otherSymptom: e.target.value })}
+                        placeholder={t.otherSymptomPlaceholder}
+                        className="h-14 text-lg bg-slate-50"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="people_affected">How many people are affected?</Label>
+                      <Label className="font-bold text-lg">{t.peopleAffected}</Label>
                       <Input
-                        id="people_affected"
                         type="number"
-                        min="1"
-                        max="100"
-                        value={peopleAffected}
-                        onChange={(e) => setPeopleAffected(parseInt(e.target.value) || 1)}
+                        value={formData.peopleAffected}
+                        onChange={e => setFormData({ ...formData, peopleAffected: parseInt(e.target.value) || 1 })}
+                        className="h-14 text-lg bg-slate-50"
                       />
                     </div>
 
-                    {symptoms.length > 0 && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={async () => {
-                          const prediction = await predictDisease(symptoms);
-                          setDiseasePreview(prediction);
-                        }}
-                        className="w-full"
-                      >
-                        Preview Disease Prediction
-                      </Button>
-                    )}
+                    <Button
+                      onClick={handlePreviewPrediction}
+                      variant="outline"
+                      className="w-full h-12 border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 font-medium"
+                    >
+                      {t.previewDiseasePrediction}
+                    </Button>
 
-                    {diseasePreview && (
-                      <Alert className={
-                        diseasePreview.riskLevel === "High" ? "border-destructive bg-destructive/5" :
-                        diseasePreview.riskLevel === "Moderate" ? "border-yellow-500 bg-yellow-500/5" :
-                        "border-green-500 bg-green-500/5"
-                      }>
-                        <AlertTriangle className={
-                          diseasePreview.riskLevel === "High" ? "h-5 w-5 text-destructive" :
-                          diseasePreview.riskLevel === "Moderate" ? "h-5 w-5 text-yellow-500" :
-                          "h-5 w-5 text-green-500"
-                        } />
-                        <AlertTitle className="text-base">
-                          🧾 Possible Disease: {diseasePreview.disease} ({diseasePreview.riskLevel} Risk)
-                        </AlertTitle>
-                        <AlertDescription className="text-sm mt-2">
-                          {diseasePreview.advice}
-                        </AlertDescription>
-                      </Alert>
+                    {formData.diseasePrediction && (
+                      <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4 flex gap-3 text-blue-900">
+                        <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold text-blue-700 mb-1">
+                            {t.diseaseRisk}: {t[('dis_' + getDiseaseKey(formData.diseasePrediction.disease)) as keyof typeof t] || formData.diseasePrediction.disease} ({t[('risk_' + formData.diseasePrediction.risk.toLowerCase()) as keyof typeof t] || formData.diseasePrediction.risk})
+                          </p>
+                          <p className="text-sm text-blue-800/80 leading-relaxed">
+                            {t[('adv_' + getDiseaseKey(formData.diseasePrediction.disease)) as keyof typeof t] || formData.diseasePrediction.advice}
+                          </p>
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
-              </div>
 
-              {/* Water Sample Image Upload */}
-              <div className="border rounded-lg p-4 space-y-3 bg-primary/5">
-                <Label className="flex items-center gap-2 text-base">
-                  <Camera className="h-5 w-5 text-primary" />
-                  Upload Water Sample Photo
-                </Label>
-                <div className="bg-white p-3 rounded border border-primary/20">
-                  <p className="text-sm font-semibold text-primary mb-2">📸 Photo Tips for Accurate Results:</p>
-                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                    <li><strong>Consistent lighting</strong>: Use indoor light or flashlight</li>
-                    <li><strong>White background</strong>: Place sample on white paper</li>
-                    <li><strong>Avoid shadows</strong>: No direct sunlight or reflections</li>
-                    <li><strong>Steady shot</strong>: Keep camera close and stable</li>
-                  </ul>
+                <div className="flex justify-end pt-4">
+                  <Button onClick={() => setStep(2)} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:scale-[1.02] transition-transform shadow-lg shadow-blue-500/20 h-12 px-8 rounded-xl font-bold text-white">
+                    Next Step <ChevronRight className="ml-2 h-4 w-4" />
+                  </Button>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Our AI will automatically extract pH and turbidity values from your photo.
-                </p>
-                
-                <div className="flex items-center gap-4">
-                  <Label htmlFor="water_image" className="cursor-pointer">
-                    <div className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
-                      <Upload className="h-4 w-4" />
-                      {uploadedImage ? "Change Photo" : "Choose Photo"}
-                    </div>
-                    <Input
-                      id="water_image"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      className="hidden"
-                    />
-                  </Label>
+              </div>
+            )}
 
-                  {analyzingImage && (
-                    <p className="text-sm text-muted-foreground animate-pulse">
-                      🤖 Analyzing image...
-                    </p>
+            {/* Step 2: Water Quality */}
+            {step === 2 && (
+              <div className="space-y-8 animate-fade-in text-center">
+                <div className="border-2 border-dashed border-blue-200 rounded-2xl p-8 bg-blue-50/30">
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mx-auto mb-4">
+                    <Camera className="h-6 w-6" />
+                  </div>
+                  <h3 className="text-xl font-bold text-blue-900 mb-2">{t.uploadWaterImage}</h3>
+                  <p className="text-sm text-slate-500 mb-6">{t.uploadWaterImageDesc}</p>
+
+                  {!formData.imagePreview ? (
+                    <label className="cursor-pointer inline-block">
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                      {formData.imagePreview ?
+                        <img src={formData.imagePreview} className="max-h-48 rounded-lg shadow-sm" /> :
+                        <div className="h-48 w-64 bg-white rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 mx-auto">
+                          No image selected
+                        </div>
+                      }
+                      <div className="mt-4 px-6 py-2 bg-white border border-blue-200 text-blue-600 font-semibold rounded-lg shadow-sm hover:bg-blue-50 transition-colors">
+                        {t.uploadButton}
+                      </div>
+                    </label>
+                  ) : (
+                    <div className="space-y-4">
+                      <img src={formData.imagePreview} className="max-h-56 mx-auto rounded-lg shadow-md border-4 border-white" />
+                      <label className="cursor-pointer inline-flex items-center gap-2 text-blue-600 font-semibold hover:text-blue-700">
+                        <RefreshCw className="h-4 w-4" /> Change Photo
+                        <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                      </label>
+                    </div>
                   )}
                 </div>
 
-                {imagePreview && (
-                  <div className="mt-3">
-                    <img 
-                      src={imagePreview} 
-                      alt="Water sample preview" 
-                      className="w-full max-w-md h-48 object-cover rounded-lg border-2 border-primary/20"
+                <div className="grid grid-cols-2 gap-6 text-left">
+                  <div className="space-y-2">
+                    <Label className="text-slate-600 font-medium">{t.phLevel}</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={formData.ph}
+                      onChange={(e) => setFormData({ ...formData, ph: parseFloat(e.target.value) || "" })}
+                      className="h-12 bg-white font-mono text-lg"
+                      placeholder="e.g. 7.0"
+                    />
+                    <p className="text-xs text-slate-400">AI-detected or manually entered.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-slate-600 font-medium">{t.turbidity}</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      value={formData.turbidity}
+                      onChange={(e) => setFormData({ ...formData, turbidity: parseFloat(e.target.value) || "" })}
+                      className="h-12 bg-white font-mono text-lg"
+                      placeholder="e.g. 1.0"
                     />
                   </div>
+                </div>
+
+                <div className="flex justify-between pt-6">
+                  <Button variant="outline" onClick={() => setStep(1)} className="h-12 px-6 rounded-xl border-slate-200 hover:bg-slate-50 text-slate-600">Back</Button>
+                  <div className="flex gap-4">
+                    <Button onClick={analyzeImage} disabled={isAnalyzing || !formData.imagePreview} className="bg-blue-600 hover:bg-blue-700 text-white shadow-lg h-12 rounded-xl">
+                      {isAnalyzing ? <Loader2 className="animate-spin" /> : t.analyzeImage}
+                    </Button>
+                    <Button onClick={handleSubmit} className="bg-gradient-to-r from-green-600 to-emerald-600 hover:scale-[1.02] transition-transform shadow-lg shadow-green-500/20 h-12 px-8 rounded-xl font-bold w-full sm:w-auto text-lg text-white">
+                      <CheckCircle2 className="mr-2 h-5 w-5" /> {t.submitReport}
+                    </Button>
+                  </div>
+                </div>
+
+                {(formData.ph && formData.turbidity) && (
+                  <div className="flex flex-col items-center gap-2 mt-6">
+                    <div className="flex gap-4 text-sm font-semibold mb-2">
+                      <span className={Number(formData.ph) >= 6.5 && Number(formData.ph) <= 8.5 ? "text-green-600" : "text-red-500"}>
+                        pH: {Number(formData.ph) >= 6.5 && Number(formData.ph) <= 8.5 ? "Safe" : "Unsafe"}
+                      </span>
+                      <span className="text-slate-300">|</span>
+                      <span className={Number(formData.turbidity) < 5 ? "text-green-600" : "text-red-500"}>
+                        Turbidity: {Number(formData.turbidity) < 5 ? "Safe" : "High Risk"}
+                      </span>
+                    </div>
+                    <Badge variant="outline" className={`px-4 py-1.5 text-sm font-bold shrink-0 ${(formData.waterRisk === 'Safe' || getWaterRisk(formData.ph, formData.turbidity) === 'Safe')
+                      ? "bg-green-50 text-green-700 border-green-200"
+                      : "bg-red-50 text-red-700 border-red-200"
+                      }`}>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      {t.waterQuality}: {t[('risk_' + (formData.waterRisk || getWaterRisk(formData.ph, formData.turbidity)).toLowerCase()) as keyof typeof t] || formData.waterRisk || getWaterRisk(formData.ph, formData.turbidity)}
+                    </Badge>
+
+                    {formData.waterAdvice && (
+                      <div className="text-sm font-medium text-slate-700 bg-blue-50 border border-blue-100 px-4 py-2 rounded-lg max-w-md mx-auto">
+                        💡 {t.viewAdvice}: {formData.waterAdvice}
+                      </div>
+                    )}
+                  </div>
                 )}
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="water_ph" className="flex items-center gap-2">
-                    <Droplets className="h-4 w-4 text-primary" />
-                    Water pH Level {uploadedImage && "(AI-extracted)"}
-                  </Label>
-                  <Input
-                    id="water_ph"
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="14"
-                    value={formData.water_ph}
-                    onChange={(e) => setFormData({ ...formData, water_ph: parseFloat(e.target.value) || 7.0 })}
-                    required
-                    disabled={analyzingImage}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {uploadedImage ? "Auto-detected from image" : "Normal range: 6.5 - 8.5"}
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="water_turbidity">
-                    Water Turbidity (NTU) {uploadedImage && "(AI-extracted)"}
-                  </Label>
-                  <Input
-                    id="water_turbidity"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={formData.water_turbidity}
-                    onChange={(e) => setFormData({ ...formData, water_turbidity: parseFloat(e.target.value) || 1.0 })}
-                    required
-                    disabled={analyzingImage}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {uploadedImage ? "Auto-detected from image" : "Lower is better (<5 NTU)"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-primary" />
-                    Include My Location
-                  </Label>
+                <div className={`bg-white border p-4 rounded-xl flex items-center justify-between mt-6 transition-colors ${formData.location ? 'border-green-200 bg-green-50' : 'border-slate-200'}`}>
+                  <div className="flex items-center gap-3 text-slate-600 font-medium">
+                    <MapPin className={`h-5 w-5 ${formData.location ? "text-green-600" : "text-blue-500"}`} />
+                    {formData.location ? (
+                      <span className="text-green-700 font-bold">Location Set: {formData.location.lat.toFixed(4)}, {formData.location.lng.toFixed(4)}</span>
+                    ) : "Include My Location"}
+                  </div>
                   <Button
-                    type="button"
-                    variant={locationEnabled ? "default" : "outline"}
+                    variant={formData.location ? "ghost" : "outline"}
                     size="sm"
                     onClick={handleGetLocation}
-                    disabled={loading}
+                    className={formData.location ? "text-green-700 hover:text-green-800 hover:bg-green-100" : ""}
                   >
-                    {locationEnabled ? "✓ Location Captured" : "Send My Location"}
+                    {formData.location ? "Update Location" : "Send My Location"}
                   </Button>
                 </div>
-                {locationEnabled && currentLocation && (
-                  <p className="text-xs text-muted-foreground">
-                    📍 Lat: {currentLocation.lat.toFixed(6)}, Lng: {currentLocation.lng.toFixed(6)}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Sharing your location helps health workers provide better emergency response
-                </p>
               </div>
+            )}
 
-              <Button 
-                type="submit" 
-                className="w-full bg-secondary hover:bg-secondary/90 h-12 text-base font-medium shadow-md hover:shadow-lg transition-all duration-300" 
-                disabled={loading}
-              >
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-                    Submitting...
-                  </span>
-                ) : (
-                  "Submit Health Report"
-                )}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* Health Worker Advice Section */}
-        {villageAdvice.length > 0 && (
-          <Card className="mb-8 shadow-medical-lg border-primary/20 animate-fade-in">
-            <CardHeader className="bg-gradient-to-r from-primary/5 to-secondary/5 border-b">
-              <CardTitle className="flex items-center gap-3 text-xl">
-                <div className="p-2 bg-primary/20 rounded-lg">
-                  <MessageSquare className="h-5 w-5 text-primary" />
+            {/* Step 3: Success */}
+            {step === 3 && (
+              <div className="flex flex-col items-center justify-center py-10 text-center animate-fade-in space-y-6">
+                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-2">
+                  <CheckCircle2 className="h-10 w-10" />
                 </div>
-                Health Worker Advice for Your Villages
-              </CardTitle>
-              <CardDescription className="text-base mt-2">
-                Safety suggestions and guidance from health workers
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {villageAdvice.map((advice) => {
-                  const borderColor = 
-                    advice.risk_level === "high" 
-                      ? "border-l-destructive" 
-                      : advice.risk_level === "moderate" 
-                      ? "border-l-warning" 
-                      : "border-l-success";
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-900 mb-2">{t.msg_report_submitted}</h3>
+                  <p className="text-slate-500 max-w-md mx-auto">
+                    {t.msg_report_thanks || "Thank you for your contribution. Your report has been sent to the health department and will help prevent disease outbreaks."}
+                  </p>
+                </div>
 
-                  return (
-                    <div
-                      key={advice.id}
-                      className={`border-l-4 ${borderColor} bg-card p-4 rounded-r-lg space-y-3`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-semibold text-lg">{advice.village_name}</h4>
-                        <Badge
-                          variant={advice.risk_level === "high" ? "destructive" : "default"}
-                          className={
-                            advice.risk_level === "moderate" 
-                              ? "bg-warning text-warning-foreground" 
-                              : advice.risk_level === "safe"
-                              ? "bg-success"
-                              : ""
-                          }
-                        >
-                          {advice.risk_level.toUpperCase()} RISK
-                        </Badge>
-                      </div>
-
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground mb-2">
-                          Safety Guidelines:
-                        </p>
-                        <ul className="list-disc list-inside space-y-1 text-sm">
-                          {(advice.auto_advice || getAutoAdvice(advice.risk_level)).map(
-                            (tip: string, idx: number) => (
-                              <li key={idx}>{tip}</li>
-                            )
-                          )}
-                        </ul>
-                      </div>
-
-                      {advice.custom_advice && (
-                        <Alert>
-                          <Info className="h-4 w-4" />
-                          <AlertTitle>Additional Instructions from Health Worker</AlertTitle>
-                          <AlertDescription>{advice.custom_advice}</AlertDescription>
-                        </Alert>
-                      )}
-
-                      <p className="text-xs text-muted-foreground">
-                        Updated: {new Date(advice.updated_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Recent Reports */}
-        <Card className="shadow-medical-lg border-primary/20 animate-fade-in">
-          <CardHeader className="bg-gradient-to-r from-primary/5 to-secondary/5 border-b">
-            <CardTitle className="text-xl">Your Recent Reports</CardTitle>
-            <CardDescription className="text-base mt-1">Last 5 health reports you submitted</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {reports.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No reports submitted yet</p>
-            ) : (
-              <div className="space-y-4">
-                {reports.map((report) => {
-                  const computeBiology = (ph?: number, turbidity?: number) => {
-                    if (ph === undefined || ph === null || turbidity === undefined || turbidity === null) {
-                      return {
-                        possible_organism: "Not enough data to analyze water biology.",
-                        health_advice: "Not enough data to analyze water biology."
-                      };
-                    }
-                    if (ph < 0 || ph > 14) {
-                      return {
-                        possible_organism: "Invalid pH value. Please check your measurement.",
-                        health_advice: "Invalid pH value. Please check your measurement."
-                      };
-                    }
-                    if (turbidity < 0) {
-                      return {
-                        possible_organism: "Invalid turbidity value. Please check your measurement.",
-                        health_advice: "Invalid turbidity value. Please check your measurement."
-                      };
-                    }
-                    if (ph < 5.5) {
-                      return {
-                        possible_organism: "Fungi or Iron Bacteria",
-                        health_advice: "⚠️ UNSAFE FOR DRINKING: Water contains fungi or iron bacteria. Do not consume. Use alternative water sources or treat with proper filtration and disinfection."
-                      };
-                    } else if (ph >= 5.5 && ph < 6.5) {
-                      return {
-                        possible_organism: "Sulfur-Oxidizing Bacteria",
-                        health_advice: "⚠️ CAUTION: Water may contain sulfur-oxidizing bacteria that can corrode pipes and cause unpleasant taste/odor. Boil water before drinking and consider water treatment."
-                      };
-                    } else if (ph >= 6.5 && ph <= 7.5 && turbidity <= 5) {
-                      return {
-                        possible_organism: "Low Microbial Presence (Safe)",
-                        health_advice: "✅ SAFE: Water quality appears good with low microbial presence. Continue maintaining good hygiene practices and regular monitoring."
-                      };
-                    } else if (ph >= 6.5 && ph <= 7.5 && turbidity > 5) {
-                      return {
-                        possible_organism: "E. coli / Protozoa (Giardia)",
-                        health_advice: "🔴 HIGH RISK: Possible E. coli or protozoan contamination (like Giardia). Boil water for at least 1 minute before drinking. Use water purification tablets or filters. Seek medical attention if symptoms develop."
-                      };
-                    } else if (ph >= 7.6 && ph <= 8.5) {
-                      return {
-                        possible_organism: "Cyanobacteria (Algae)",
-                        health_advice: "⚠️ MODERATE RISK: Cyanobacteria (algae) may be present. While not always harmful, some types produce toxins. Boil water before drinking. If water has unusual color or odor, avoid consumption and seek alternative sources."
-                      };
-                    } else if (ph >= 8.6 && ph <= 9.0) {
-                      return {
-                        possible_organism: "Sulfate-Reducing Bacteria",
-                        health_advice: "⚠️ UNSAFE: Water contains sulfate-reducing bacteria which can cause unpleasant odors and health issues. Do not drink. Use alternative water sources or professional water treatment."
-                      };
-                    }
-                    return {
-                      possible_organism: "Extreme Alkaline Conditions (Minimal Life)",
-                      health_advice: "🔴 CHEMICALLY UNSAFE: Water is extremely alkaline and chemically unsafe for consumption. Do not drink. Use alternative water sources immediately."
-                    };
-                  };
-                  const biology = (!report.possible_organism || !report.health_advice)
-                    ? computeBiology(report.water_ph, report.water_turbidity)
-                    : { possible_organism: report.possible_organism, health_advice: report.health_advice };
-                  return (
-                  <div key={report.id} className="border rounded-lg p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold">{report.village_name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {new Date(report.report_date).toLocaleDateString()}
-                        </p>
-                      </div>
-                      {report.disease_risk_level ? (
-                        <Badge 
-                          variant={
-                            report.disease_risk_level === "High" ? "destructive" : 
-                            report.disease_risk_level === "Moderate" ? "default" : 
-                            "outline"
-                          } 
-                          className="gap-1"
-                        >
-                          {report.disease_risk_level === "High" && <AlertTriangle className="h-3 w-3" />}
-                          {report.disease_risk_level === "Moderate" && <Info className="h-3 w-3" />}
-                          {report.disease_risk_level === "Low" && <CheckCircle2 className="h-3 w-3" />}
-                          {report.disease_risk_level} Risk
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-success gap-1">
-                          <CheckCircle2 className="h-3 w-3" />
-                          No Symptoms Reported
-                        </Badge>
-                      )}
-                    </div>
-
-                    {report.predicted_disease ? (
-                      <Alert className={
-                        report.disease_risk_level === "High" ? "border-destructive bg-destructive/5" :
-                        report.disease_risk_level === "Moderate" ? "border-yellow-500 bg-yellow-500/5" :
-                        "border-green-500 bg-green-500/5"
-                      }>
-                        <AlertTriangle className={
-                          report.disease_risk_level === "High" ? "h-4 w-4 text-destructive" :
-                          report.disease_risk_level === "Moderate" ? "h-4 w-4 text-yellow-500" :
-                          "h-4 w-4 text-green-500"
-                        } />
-                        <AlertTitle className="text-sm font-semibold">
-                          🩺 Predicted Disease: {report.predicted_disease}
-                        </AlertTitle>
-                        <AlertDescription className="text-xs mt-1 space-y-1">
-                          <p className="font-medium">Risk Level: {report.disease_risk_level}</p>
-                          <p>{report.disease_advice}</p>
-                        </AlertDescription>
-                      </Alert>
-                    ) : (
-                      <Alert className="border-muted bg-muted/5">
-                        <CheckCircle2 className="h-4 w-4 text-success" />
-                        <AlertTitle className="text-sm font-semibold">
-                          No Health Issues Detected
-                        </AlertTitle>
-                        <AlertDescription className="text-xs mt-1">
-                          Continue maintaining good hygiene and water safety practices.
-                        </AlertDescription>
-                      </Alert>
-                    )}
-
-                    {/* Water Biology Analysis */}
-                    {biology.possible_organism && biology.health_advice && (
-                      <Alert className={
-                        biology.health_advice.includes("HIGH RISK") || biology.health_advice.includes("UNSAFE") ? "border-destructive bg-destructive/5" :
-                        biology.health_advice.includes("MODERATE RISK") || biology.health_advice.includes("CAUTION") ? "border-yellow-500 bg-yellow-500/5" :
-                        "border-blue-500 bg-blue-500/5"
-                      }>
-                        <Droplets className={
-                          biology.health_advice.includes("HIGH RISK") || biology.health_advice.includes("UNSAFE") ? "h-4 w-4 text-destructive" :
-                          biology.health_advice.includes("MODERATE RISK") || biology.health_advice.includes("CAUTION") ? "h-4 w-4 text-yellow-500" :
-                          "h-4 w-4 text-blue-500"
-                        } />
-                        <AlertTitle className="text-sm font-semibold">
-                          🔬 Water Biology Analysis
-                        </AlertTitle>
-                        <AlertDescription className="text-xs mt-1 space-y-1">
-                          <p className="font-medium">Possible Organism: {biology.possible_organism}</p>
-                          <p className="mt-1">{biology.health_advice}</p>
-                        </AlertDescription>
-                      </Alert>
-                    )}
-
-                    {report.symptoms && report.symptoms.length > 0 && (
-                      <div className="text-sm">
-                        <span className="text-muted-foreground font-medium">Symptoms: </span>
-                        <span className="text-foreground">{report.symptoms.join(", ")}</span>
-                        {report.people_affected && report.people_affected > 1 && (
-                          <span className="text-muted-foreground ml-2">({report.people_affected} people affected)</span>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm pt-2">
-                      <div>
-                        <span className="text-muted-foreground">pH:</span> {report.water_ph}
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Turbidity:</span> {report.water_turbidity}
-                      </div>
-                    </div>
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteReport(report.id)}
-                        className="inline-flex items-center gap-2 text-sm px-3 py-2 rounded border hover:bg-muted transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete report
-                      </button>
-                    </div>
-                  </div>
-                  );
-                })}
+                <div className="flex gap-4 pt-4">
+                  <Button
+                    onClick={() => setStep(1)}
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:scale-[1.02] transition-transform shadow-lg shadow-blue-500/20 h-12 px-8 rounded-xl font-bold text-white"
+                  >
+                    {t.submitReportTitle || "Submit Another Report"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate("/")}
+                    className="h-12 px-6"
+                  >
+                    {t.cancel || "Return Home"}
+                  </Button>
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Delete Confirmation Dialog */}
-        <AlertDialog open={showDeleteDialog} onOpenChange={(open) => {
-          setShowDeleteDialog(open);
-          if (!open) {
-            setDeleteReportId(null);
-            setDeleting(false);
-          }
-        }}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center gap-2">
-                <Trash2 className="h-5 w-5" />
-                Delete Your Report
-              </AlertDialogTitle>
-              <AlertDialogDescription className="text-base">
-                Are you sure you want to delete this report? This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel
-                onClick={() => {
-                  setDeleteReportId(null);
-                  setDeleting(false);
-                }}
-                disabled={deleting}
-              >
-                Cancel
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={confirmDeleteReport}
-                disabled={deleting}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {deleting ? (
-                  <span className="flex items-center gap-2">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-                    Deleting...
-                  </span>
-                ) : (
-                  "Delete Report"
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </main>
+        {/* Recent Reports Section */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-slate-800">{t.recentReports}</h2>
+          <p className="text-slate-500 -mt-3 mb-4">{t.recentReportsDesc || "Last 5 health reports you submitted"}</p>
+
+          {reports.map((report) => {
+            const riskLevel = (report.disease_risk_level || report.alert_level || "Safe").toLowerCase();
+            const isHigh = riskLevel.includes("high") || riskLevel.includes("severe");
+            const isModerate = riskLevel.includes("moderate");
+
+            return (
+              <Card key={report.id} className={`
+                border-0 shadow-lg backdrop-blur-md overflow-hidden relative group transition-all duration-300 hover:-translate-y-1 hover:shadow-xl
+                ${isHigh
+                  ? "bg-gradient-to-br from-white via-red-50/30 to-red-50/80 ring-1 ring-red-100/50"
+                  : isModerate
+                    ? "bg-gradient-to-br from-white via-orange-50/30 to-orange-50/80 ring-1 ring-orange-100/50"
+                    : "bg-gradient-to-br from-white via-emerald-50/30 to-emerald-50/80 ring-1 ring-emerald-100/50"}
+              `}>
+
+                {/* Colored Side Bar Accent */}
+                <div className={`absolute left-0 top-0 bottom-0 w-1.5 
+                ${isHigh ? "bg-red-500" : isModerate ? "bg-orange-500" : "bg-emerald-500"}`}
+                />
+
+                <div className="p-6 pl-8">
+                  <div className="flex flex-col xl:flex-row gap-6">
+
+                    {/* Left Column: Village Info */}
+                    <div className="w-full xl:w-1/4 space-y-4">
+                      <div>
+                        <h3 className="text-2xl font-bold text-slate-800 tracking-tight leading-none mb-1">{report.village_name}</h3>
+                        <p className="text-sm font-medium text-slate-500 flex items-center gap-2">
+                          <MapPin className="h-3 w-3" /> Location Report
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-white/50 shadow-sm">
+                        <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-lg">
+                          {(userName || "U")[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Submitted By</p>
+                          <p className="font-semibold text-slate-700 text-sm">{userName || "Me"}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <div className="flex justify-between text-xs text-slate-500">
+                          <span>{t.date || "Date"}</span>
+                          <span className="font-mono">{new Date(report.created_at || Date.now()).toLocaleDateString()}</span>
+                        </div>
+                        <Badge variant="outline" className={`
+                                  py-1.5 justify-center font-bold tracking-wide rounded-lg
+                                  ${isHigh ? "bg-red-100 text-red-700 border-red-200" : isModerate ? "bg-orange-100 text-orange-700 border-orange-200" : "bg-emerald-100 text-emerald-700 border-emerald-200"}
+                               `}>
+                          {report.disease_risk_level || report.alert_level || "Safe Condition"}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Middle Column: Detailed Health & Water Metrics */}
+                    <div className="w-full xl:w-2/4 xl:border-l xl:border-r border-slate-200/60 xl:px-8 space-y-5">
+
+                      {/* Disease Prediction Section */}
+                      <div className="bg-white/50 rounded-xl p-4 border border-white/60 shadow-sm">
+                        <div className="flex items-start justify-between mb-2">
+                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                            <Activity className="h-3 w-3" /> {t.diseaseRisk || "Prediction"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="text-xl font-bold text-slate-800">
+                            {t[('dis_' + getDiseaseKey(report.predicted_disease)) as keyof typeof t] || report.predicted_disease || "Analysis Pending"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Symptoms */}
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{t.selectSymptoms} ({report.people_affected || 1})</p>
+                        <div className="flex flex-wrap gap-2">
+                          {report.symptoms && report.symptoms.length > 0 ? report.symptoms.map((s: string) => (
+                            <span key={s} className="px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold border border-indigo-100 shadow-sm">
+                              {t[('syp_' + s) as keyof typeof t] || s.replace(/_/g, " ")}
+                            </span>
+                          )) : <span className="text-sm text-slate-400 italic">No specific symptoms recorded</span>}
+                        </div>
+                      </div>
+
+                      {/* Water Quality Grid */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 flex flex-col items-center justify-center text-center group-hover:bg-blue-50 transition-colors">
+                          <div className="text-xs text-blue-400 font-bold uppercase mb-1">{t.phLevel || "pH Level"}</div>
+                          <div className="text-3xl font-black text-blue-600 tracking-tight">{report.water_ph}</div>
+                          <div className={`h-1 w-12 rounded-full mt-2 ${report.water_ph >= 6.5 && report.water_ph <= 8.5 ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                          <span className={`text-xs font-bold mt-1 ${report.water_ph >= 6.5 && report.water_ph <= 8.5 ? 'text-green-600' : 'text-red-500'}`}>
+                            {report.water_ph >= 6.5 && report.water_ph <= 8.5 ? 'Safe' : (report.water_ph < 6.5 ? 'Acidic' : 'Alkaline')}
+                          </span>
+                        </div>
+                        <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-4 flex flex-col items-center justify-center text-center group-hover:bg-emerald-50 transition-colors">
+                          <div className="text-xs text-emerald-500 font-bold uppercase mb-1">{t.turbidity || "Turbidity"}</div>
+                          <div className="text-3xl font-black text-emerald-600 tracking-tight flex items-end gap-1">
+                            {report.water_turbidity}
+                            <span className="text-sm font-bold text-emerald-400 mb-1">NTU</span>
+                          </div>
+                          <div className={`h-1 w-12 rounded-full mt-2 ${report.water_turbidity < 5 ? 'bg-green-400' : 'bg-orange-400'}`}></div>
+                          <span className={`text-xs font-bold mt-1 ${report.water_turbidity < 5 ? 'text-green-600' : 'text-orange-500'}`}>
+                            {report.water_turbidity < 1 ? 'Clear' : (report.water_turbidity < 5 ? 'Moderate' : 'High')}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Possible Organism Warning */}
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50/50 border border-red-100">
+                        <div className="p-1.5 bg-red-100 rounded-full text-red-600">
+                          <AlertTriangle className="h-4 w-4" />
+                        </div>
+                        <div className="text-sm">
+                          <span className="block text-xs font-bold text-red-400 uppercase">{t.possibleOrganism || "Microbial Risk"}</span>
+                          <span className="font-semibold text-red-700">{report.possible_organism || t.org_low_microbial || "Low Risk / None Detected"}</span>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    {/* Right Column: Advice */}
+                    <div className="w-full xl:w-1/4 flex flex-col gap-4">
+                      <div className="flex-1 space-y-3">
+                        {/* Medical Camp Notification */}
+                        {(report.medical_camp_arranged || report.alert_message === "MEDICAL_CAMP_ARRANGED") && (
+                          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-red-900 shadow-sm animate-pulse relative overflow-hidden">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="p-1.5 bg-red-100 rounded-full text-red-600">
+                                <Tent className="h-4 w-4" />
+                              </div>
+                              <p className="text-xs font-bold text-red-600 uppercase">Medical Action Taken</p>
+                            </div>
+                            <p className="text-sm font-bold leading-relaxed">
+                              "Medical camp has been arranged. A doctor will visit your village soon. Please follow health guidelines and be prepared."
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Display Worker Advice (Top Priority) */}
+                        {report.health_advice ? (
+                          <div className="bg-amber-100/50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900 shadow-sm relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-2 opacity-10">
+                              <MessageSquarePlus className="h-16 w-16" />
+                            </div>
+                            <p className="text-xs font-bold text-amber-600 uppercase mb-2">Health Worker Message</p>
+                            <p className="relative z-10 font-bold leading-relaxed">"{report.health_advice}"</p>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 text-slate-400 text-sm text-center">
+                            Waiting for health worker review...
+                          </div>
+                        )}
+
+                        {/* AI Advice Summary */}
+                        {!report.health_advice && report.disease_advice && (
+                          <div className="text-xs text-slate-500 bg-white/50 p-3 rounded-lg border border-slate-100">
+                            <span className="font-bold text-slate-600">AI Suggestion:</span> {t[('adv_' + getDiseaseKey(report.predicted_disease)) as keyof typeof t] || report.disease_advice}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Read More / Print Actions */}
+                      {/* You can add a print button here for the villager too if desired, keeping it clean for now */}
+                    </div>
+
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+
+      </div>
     </div>
   );
 };

@@ -214,3 +214,33 @@ supabase functions deploy
 ## License
 
 This project is part of the Health Monitor system.
+
+
+## Important Setup Notes
+
+### Environment Variables
+Your `.env.local` file should contain:
+```bash
+VITE_SUPABASE_URL=https://usynxptupskoeceomjky.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
+```
+
+**Critical:**
+- No quotes around values
+- Restart dev server after changing `.env.local`
+- Clear browser cache if issues persist
+
+### Troubleshooting
+If you encounter "Invalid API Key" or login/registration errors:
+1. See `SETUP_GUIDE.md` for complete setup instructions
+2. See `TROUBLESHOOTING.md` for common issues and solutions
+3. Run `node verify-supabase.js` to test your Supabase connection
+4. Check browser console (F12) for detailed error messages
+
+### Quick Test
+To verify your Supabase setup is working:
+```bash
+node verify-supabase.js
+```
+
+Expected output: `✅ All tests passed!`
